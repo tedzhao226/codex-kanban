@@ -1,8 +1,12 @@
+import { createChatPanel } from '/chat.js';
+
 const names = { backlog: 'Backlog', running: 'Running', 'needs-input': 'Needs input', review: 'Review', done: 'Done' };
 const runtimeNames = { 'not-loaded': 'Status unavailable', running: 'Running in Codex', 'needs-input': 'Waiting for you', idle: 'Idle in Codex', error: 'Task error' };
 const emptyText = { backlog: ['A clear starting point', 'Tasks without live status land here.'], running: ['Room to make progress', 'Active tasks appear here automatically.'], 'needs-input': ['Nothing waiting on you', 'Approvals and questions appear here.'], review: ['Ready when you are', 'Idle tasks land here for review.'], done: ['Make room for what’s next', 'Move finished work here.'] };
 const $ = selector => document.querySelector(selector);
 let state, project = '', search = '', signature = '', dragging = null, busy = false, loading = false, toastTimer;
+const chat = createChatPanel({ getToken: () => state?.token, openNative: id => request(`/api/tasks/${id}/open`, {}),
+  onSelection: id => document.querySelectorAll('.card').forEach(node => node.classList.toggle('selected', node.dataset.id === id)) });
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -56,7 +60,7 @@ function renderProjects() {
 }
 
 function card(task) {
-  const node = element('article', 'card');
+  const node = element('article', 'card' + (chat.selectedId() === task.id ? ' selected' : ''));
   node.dataset.id = task.id;
   node.draggable = true;
   const top = element('div', 'card-top');
@@ -66,9 +70,9 @@ function card(task) {
   top.append(element('span', 'card-project', task.projectName), when);
   const title = element('button', 'card-title', task.title);
   title.type = 'button';
-  title.dataset.action = 'open';
+  title.dataset.action = 'chat';
   title.title = task.title;
-  title.setAttribute('aria-label', `Open in Codex: ${task.title}`);
+  title.setAttribute('aria-label', `View conversation: ${task.title}`);
   node.append(top, title);
   if (task.preview && task.preview !== task.title) node.append(element('p', 'preview', task.preview));
   const runtime = element('span', `runtime ${task.runtime}`, runtimeNames[task.runtime]);
@@ -177,8 +181,10 @@ document.addEventListener('keydown', event => {
   if (event.key === '/' && !event.metaKey && !event.ctrlKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) { event.preventDefault(); $('#search').focus(); }
 });
 $('#board').addEventListener('click', async event => {
+  const card = event.target.closest('.card');
+  if (!card || event.target.closest('select') || busy) return;
   const button = event.target.closest('[data-action="open"]');
-  if (!button || busy) return;
+  if (!button) { chat.open(state.tasks.find(task => task.id === card.dataset.id)); return; }
   button.disabled = true;
   try {
     await request(`/api/tasks/${button.closest('.card').dataset.id}/open`, {});

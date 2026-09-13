@@ -9,13 +9,20 @@ import { promisify } from 'node:util';
 import { TaskIndex } from './lib/tasks.mjs';
 import { DesktopFeed } from './lib/desktop.mjs';
 import { BoardStore, isThreadId, COLUMNS, runtimeLabel } from './lib/board.mjs';
+import { Conversations } from './lib/conversations.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const execute = promisify(execFile);
-const assets = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/styles.css': ['styles.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
+const assets = { '/': ['public/index.html', 'text/html'], '/app.js': ['public/app.js', 'text/javascript'],
+  '/chat.js': ['public/chat.js', 'text/javascript'], '/markdown.js': ['public/markdown.js', 'text/javascript'],
+  '/styles.css': ['public/styles.css', 'text/css'], '/chat.css': ['public/chat.css', 'text/css'], '/favicon.svg': ['public/favicon.svg', 'image/svg+xml'],
+  '/vendor/marked.js': ['node_modules/marked/lib/marked.esm.js', 'text/javascript'],
+  '/vendor/purify.js': ['node_modules/dompurify/dist/purify.es.mjs', 'text/javascript'] };
 
 export function createApp({ index, feed, store, openThread = id => execute('/usr/bin/open', [`codex://threads/${id}`]) }) {
   const token = randomBytes(32).toString('hex');
+  const conversations = new Conversations(index, feed);
+  const streams = new Set();
   let threads = [], indexError = null;
   const refresh = () => {
     try { threads = index.list(); feed.sync(threads.map(thread => thread.id)); indexError = null; }
@@ -43,20 +50,52 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
       if (req.method === 'GET' && url.pathname === '/api/board') { refresh(); return send(200, snapshot()); }
       if (req.method === 'GET' && assets[url.pathname]) {
         const [name, type] = assets[url.pathname];
-        const data = await readFile(join(root, 'public', name));
+        const data = await readFile(join(root, name));
         res.writeHead(200, { 'Content-Type': type + '; charset=utf-8' });
         return res.end(data);
       }
-      const match = /^\/api\/tasks\/([^/]+)\/(open|move|reset)$/.exec(url.pathname);
-      if (!match || req.method !== 'POST') return send(404, { error: 'Not found.' });
+      const match = /^\/api\/tasks\/([^/]+)\/(open|move|reset|conversation|events|message|interrupt)$/.exec(url.pathname);
+      if (!match) return send(404, { error: 'Not found.' });
       if (req.headers['x-kanban-token'] !== token) return send(403, { error: 'Reload the board before making changes.' });
       const [, id, action] = match;
       if (!isThreadId(id) || !threads.some(thread => thread.id === id)) return send(404, { error: 'Native task not found.' });
+      if (['conversation', 'events'].includes(action)) {
+        if (req.method !== 'GET') return send(405, { error: 'Use GET for conversation reads.' });
+        const limit = Number(url.searchParams.get('limit') ?? 50);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 10000) return send(400, { error: 'Invalid history limit.' });
+        if (action === 'conversation') return send(200, await conversations.view(id, limit));
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Connection': 'keep-alive' });
+        res.flushHeaders();
+        streams.add(res);
+        const release = conversations.subscribe(id);
+        let scheduled, sending = false, dirty = false, last = '', closed = false;
+        const update = async () => {
+          if (closed) return;
+          if (sending) { dirty = true; return; }
+          sending = true;
+          try {
+            const value = JSON.stringify(await conversations.view(id, limit));
+            if (!closed && value !== last) { last = value; res.write(`data: ${value}\n\n`); }
+          } catch (error) { if (!closed) res.write(`data: ${JSON.stringify({ error: error.message, unavailable: true })}\n\n`); }
+          finally { sending = false; if (dirty) { dirty = false; schedule(id); } }
+        };
+        const schedule = changedId => {
+          if (changedId !== id || scheduled || closed) return;
+          scheduled = setTimeout(() => { scheduled = null; update(); }, 150);
+        };
+        conversations.on('update', schedule);
+        const heartbeat = setInterval(() => { if (!closed) { res.write(': heartbeat\n\n'); update(); } }, 10000);
+        res.on('close', () => { closed = true; clearTimeout(scheduled); clearInterval(heartbeat); conversations.off('update', schedule); release(); streams.delete(res); });
+        update();
+        return;
+      }
+      if (req.method !== 'POST') return send(405, { error: 'Use POST for task actions.' });
       let body = '';
-      for await (const chunk of req) { body += chunk; if (body.length > 4096) return send(413, { error: 'Request is too large.' }); }
+      for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 150000) return send(413, { error: 'Request is too large.' }); }
       let input;
       try { input = body ? JSON.parse(body) : {}; } catch { return send(400, { error: 'Invalid JSON.' }); }
       if (input === null || typeof input !== 'object' || Array.isArray(input)) return send(400, { error: 'Expected a JSON object.' });
+      if (action === 'message' || action === 'interrupt') return send(200, await conversations.act(id, action, input));
       if (action === 'open') { await openThread(id); return send(200, { opened: true, threadId: id }); }
       if (action === 'reset') store.reset(id);
       else {
@@ -65,9 +104,9 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
         store.move(id, input.column, input.beforeId ?? null, snapshot().tasks);
       }
       return send(200, snapshot());
-    } catch (error) { return send(500, { error: error.message }); }
+    } catch (error) { return send(error.status ?? 500, { error: error.message, uncertain: error.uncertain ?? false }); }
   });
-  return { server, snapshot, close() { clearInterval(timer); feed.close(); index.close(); return new Promise(resolve => server.close(resolve)); } };
+  return { server, snapshot, close() { clearInterval(timer); for (const stream of streams) stream.end(); conversations.close(); feed.close(); index.close(); return new Promise(resolve => server.close(resolve)); } };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -7,7 +7,8 @@
   <title>Codex Kanban</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
-  <script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/chat.css">
+  <script src="/app.js" type="module"></script>
 </head>
 <body>
   <aside class="sidebar">
@@ -20,7 +21,7 @@
     <header>
       <div class="eyebrow">YOUR NATIVE CODEX TASKS</div>
       <div class="heading-row"><h1 id="heading">Task board</h1><span id="connection" class="connection">Connecting…</span></div>
-      <p class="subtitle">A place for every task. The full conversation stays in Codex.</p>
+      <p class="subtitle">Organize your tasks. Read, reply, and steer from the board.</p>
       <div class="toolbar">
         <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search tasks…" aria-label="Search tasks" autocomplete="off"><kbd>/</kbd></label>
         <span id="summary" class="summary">Loading tasks…</span>
@@ -31,6 +32,24 @@
     <div class="board-wrap"><div id="board" class="board" aria-label="Task board" aria-busy="true"><div class="loading">Connecting to your task library…</div></div></div>
     <footer><span>Drag to organize · Use a card’s lane menu for keyboard access</span><span id="sync-time">Local library</span></footer>
   </main>
+  <aside id="chat-panel" class="chat-panel" aria-labelledby="chat-title" hidden>
+    <div id="chat-resize" class="chat-resize" role="separator" aria-label="Resize conversation panel" aria-orientation="vertical" tabindex="0"></div>
+    <div class="chat-heading">
+      <div class="chat-heading-top"><span class="eyebrow">CONVERSATION</span><div class="chat-heading-actions"><button id="chat-expand" class="quiet-button" aria-label="Expand conversation" type="button">⤢</button><button id="chat-close" class="quiet-button" aria-label="Close conversation" type="button">×</button></div></div>
+      <h2 id="chat-title"></h2>
+      <div class="chat-meta"><span id="chat-status" role="status"></span><button id="chat-native" class="quiet-button" type="button">Open in Codex ↗</button></div>
+    </div>
+    <div id="chat-notice" class="chat-notice" hidden><span id="chat-notice-text"></span><button id="chat-connect" type="button">Connect in Codex ↗</button></div>
+    <div id="chat-error" class="chat-error" role="alert" hidden></div>
+    <div id="chat-timeline" class="chat-timeline" tabindex="0" aria-label="Conversation history"><button id="chat-earlier" class="quiet-button" type="button" hidden>↑ Load earlier</button><div id="chat-messages"></div><p id="chat-empty" class="chat-empty">Loading conversation…</p></div>
+    <button id="chat-latest" class="chat-latest" type="button" hidden>↓ Jump to latest</button>
+    <form id="chat-composer" class="chat-composer">
+      <label for="chat-input" class="composer-label">Continue this conversation</label>
+      <textarea id="chat-input" rows="3" maxlength="32000" placeholder="Write a message…" spellcheck="true"></textarea>
+      <div id="chat-delivery" class="chat-delivery" hidden><span>Delivery wasn’t confirmed. Check the conversation before resending.</span><button id="chat-checked" type="button">I checked — keep editing</button></div>
+      <div class="composer-footer"><span id="composer-hint">⌘ / Ctrl + Enter to send</span><div><button id="chat-stop" class="stop-button" type="button" hidden>■ Stop</button><button id="chat-send" class="send-button" type="submit" disabled>Send ↑</button></div></div>
+    </form>
+  </aside>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>
