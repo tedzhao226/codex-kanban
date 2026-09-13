@@ -20,7 +20,7 @@ async function fixture(t, ids = [id]) {
   const feed = Object.assign(new EventEmitter(), { states: new Map(), conversations: new Map(), connected: true, protocolOK: true,
     message: 'Connected to Codex', sync() {}, close() {}, retain: () => () => {}, loadHistory: async () => {} });
   const app = createApp({
-    index: { list: () => ids.map(id => ({ id, title: 'Existing native chat', runtime: 'idle', updatedAt: 1 })), rolloutPath: () => rolloutPath, close() {} },
+    index: { list: () => ids.map(id => ({ id, cwd: directory, title: 'Existing native chat', runtime: 'idle', updatedAt: 1 })), rolloutPath: () => rolloutPath, close() {} },
     feed,
     store: await BoardStore.open(storePath), openThread: async value => { opened.push(value); },
   });
@@ -30,8 +30,73 @@ async function fixture(t, ids = [id]) {
   const base = `http://127.0.0.1:${app.server.address().port}`;
   const board = await (await fetch(base + '/api/board')).json();
   const post = (action, body = {}, headers = {}, taskId = id) => fetch(`${base}/api/tasks/${taskId}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-kanban-token': board.token, ...headers }, body: JSON.stringify(body) });
-  return { app, base, board, opened, post, storePath, feed };
+  return { app, base, board, opened, post, storePath, feed, directory };
 }
+
+async function boardEvents(t, base) {
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const response = await fetch(base + '/api/board/events', { signal: controller.signal, headers: { Connection: 'close' } });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /text\/event-stream/);
+  async function* events() {
+    let buffer = '';
+    for await (const chunk of response.body.pipeThrough(new TextDecoderStream())) {
+      buffer += chunk;
+      let end;
+      while ((end = buffer.indexOf('\n\n')) >= 0) {
+        const event = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        if (event.startsWith('data: ')) yield event.slice(6);
+      }
+    }
+  }
+  const stream = events();
+  await stream.next();
+  return stream;
+}
+
+for (const [status, runtime, column] of [
+  [{ type: 'active', activeFlags: [] }, 'running', 'running'],
+  [{ type: 'active', activeFlags: ['waitingOnApproval'] }, 'needs-input', 'needs-input'],
+  [{ type: 'idle' }, 'idle', 'review'],
+  [{ type: 'systemError' }, 'error', 'needs-input'],
+]) test(`board viewers are notified when Codex becomes ${runtime}`, { timeout: 3000 }, async t => {
+  const { base, feed } = await fixture(t);
+  const events = await boardEvents(t, base);
+  feed.states.set(id, { threadRuntimeStatus: status });
+  feed.emit('change');
+  assert.equal((await events.next()).done, false);
+  const board = await (await fetch(base + '/api/board')).json();
+  assert.equal(board.tasks[0].runtime, runtime);
+  assert.equal(board.tasks[0].column, column);
+});
+
+test('board viewers receive layout edits and desktop disconnection', { timeout: 3000 }, async t => {
+  const { base, feed, post } = await fixture(t);
+  const events = await boardEvents(t, base);
+  await post('move', { column: 'done', expectedLayoutRevision: 0 });
+  assert.equal((await events.next()).done, false);
+  assert.equal((await (await fetch(base + '/api/board')).json()).tasks[0].column, 'done');
+  feed.connected = false;
+  feed.message = 'Desktop disconnected. Reconnecting…';
+  feed.emit('change');
+  assert.equal((await events.next()).done, false);
+  assert.equal((await (await fetch(base + '/api/board')).json()).connection.connected, false);
+});
+
+test('a run that finishes between board reads still releases manual Done', async t => {
+  const { base, feed, post } = await fixture(t);
+  await post('move', { column: 'done', expectedLayoutRevision: 0 });
+  feed.states.set(id, { threadRuntimeStatus: { type: 'active', activeFlags: [] } });
+  feed.emit('change');
+  feed.states.set(id, { threadRuntimeStatus: { type: 'idle' } });
+  feed.emit('change');
+  const board = await (await fetch(base + '/api/board')).json();
+  assert.equal(board.tasks[0].column, 'review');
+  assert.equal(board.tasks[0].manual, false);
+  assert.equal(board.tasks[0].layoutRevision, 2);
+});
 
 test('board action opens the same native task ID; moves persist separately', async t => {
   const { board, opened, post, storePath } = await fixture(t);
@@ -76,6 +141,21 @@ test('page is served with no-cache and script isolation headers', async t => {
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.match(await response.text(), /Codex Kanban/);
+});
+
+test('SVG previews require the local token and return workspace assets as JSON', async t => {
+  const { base, post, directory } = await fixture(t);
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>Local preview</text></svg>';
+  writeFileSync(join(directory, 'diagram.svg'), svg);
+  assert.equal((await post('svg', { path: 'diagram.svg' }, { 'x-kanban-token': '' })).status, 403);
+  assert.equal((await post('svg', { path: 'diagram.svg' }, { Origin: 'https://untrusted.example' })).status, 403);
+  const response = await post('svg', { path: 'diagram.svg' });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /application\/json/);
+  assert.deepEqual(await response.json(), { svg });
+  assert.equal((await fetch(base + '/vendor/mermaid/mermaid.esm.min.mjs')).status, 200);
+  assert.equal((await fetch(base + '/vendor/mermaid/package.json')).status, 404);
+  assert.equal((await fetch(base + '/vendor/mermaid/chunks/mermaid.esm.min/missing.mjs')).status, 404);
 });
 
 test('conversation reads and streams require the local token and stream updated messages', { timeout: 5000 }, async t => {

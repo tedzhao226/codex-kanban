@@ -38,7 +38,7 @@ test('moving and ordering survive restart; reset retains the revision', async t 
   await store.move(c, 'done', a, tasks, 0);
   await store.close();
   const restarted = await f.open();
-  const result = await restarted.arrange(tasks.map(task => ({ ...task, runtime: 'running' })));
+  const result = await restarted.arrange(tasks.map(task => ({ ...task, runtime: 'idle' })));
   assert.deepEqual(result.tasks.map(task => task.id), [b, c, a]);
   assert.ok(result.tasks.every(task => task.column === 'done' && task.manual && task.layoutRevision === 1));
   await restarted.reset(a, tasks, 1);
@@ -49,6 +49,47 @@ test('moving and ordering survive restart; reset retains the revision', async t 
   assert.equal(reset.manual, false);
   assert.equal(reset.layoutRevision, 2);
   await assert.rejects(reopened.move(a, 'done', null, tasks, 0), { status: 409 });
+});
+
+test('a manually finished card follows Codex again when a new run starts', async t => {
+  const store = await fixture(t).open();
+  await store.move(b, 'done', null, tasks, 0);
+  const running = tasks.map(task => task.id === b ? { ...task, runtime: 'running' } : task);
+  const board = await store.arrange(running);
+  const card = board.tasks.find(task => task.id === b);
+  assert.equal(card.column, 'running');
+  assert.equal(card.manual, false);
+  assert.equal(card.layoutRevision, 2);
+  assert.equal(board.boardRevision, 2);
+  assert.equal((await store.arrange(tasks)).tasks.find(task => task.id === b).column, 'review');
+  await assert.rejects(store.move(b, 'done', null, running, 1), { status: 409 });
+});
+
+for (const runtime of ['needs-input', 'error']) test(`manual placement releases when Codex reports ${runtime}`, async t => {
+  const store = await fixture(t).open();
+  await store.move(c, 'done', null, tasks, 0);
+  assert.equal((await store.arrange(tasks)).tasks.find(task => task.id === c).column, 'done');
+  const board = await store.arrange(tasks.map(task => task.id === c ? { ...task, runtime } : task));
+  assert.equal(board.tasks.find(task => task.id === c).column, 'needs-input');
+  assert.equal(board.tasks.find(task => task.id === c).manual, false);
+});
+
+test('a resumed task releases saved manual placement after server restart', async t => {
+  const f = fixture(t), store = await f.open();
+  await store.move(b, 'done', null, tasks, 0);
+  await store.close();
+  const restarted = await f.open();
+  const board = await restarted.arrange(tasks.map(task => task.id === b ? { ...task, runtime: 'running' } : task));
+  assert.equal(board.tasks.find(task => task.id === b).column, 'running');
+  assert.equal(board.tasks.find(task => task.id === b).manual, false);
+});
+
+test('reordering an automatic card keeps it following Codex status', async t => {
+  const store = await fixture(t).open();
+  const moved = await store.move(b, 'review', null, tasks, 0);
+  assert.equal(moved.tasks.find(task => task.id === b).manual, false);
+  const board = await store.arrange(tasks.map(task => task.id === b ? { ...task, runtime: 'not-loaded' } : task));
+  assert.equal(board.tasks.find(task => task.id === b).column, 'backlog');
 });
 
 test('concurrent different-card moves before the same anchor both survive', async t => {

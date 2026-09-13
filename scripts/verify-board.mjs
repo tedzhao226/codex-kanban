@@ -31,6 +31,9 @@ async function checkBrowser({ base, ids, space, screenshot }) {
     window.boardTest = { pausePolling: true, holdNextRead: false, holdActionId: null, held: [], replies: [], completedReads: 0 };
     const originalInterval = window.setInterval;
     window.setInterval = (fn, delay, ...args) => originalInterval(() => { if (delay !== 4000 || !boardTest.pausePolling) fn(...args); }, delay);
+    window.EventSource = class extends EventSource {
+      constructor(...args) { super(...args); this.addEventListener('message', event => { if (boardTest.pausePolling) event.stopImmediatePropagation(); }); }
+    };
     const originalFetch = window.fetch.bind(window);
     window.fetch = async (input, options) => {
       let response = await originalFetch(input, options);
@@ -128,7 +131,7 @@ async function checkBrowser({ base, ids, space, screenshot }) {
   await first.selectOption(selector(b), 'review');
   await first.waitForFunction(id => document.querySelector(`[data-id="${id}"]`)?.dataset.layoutRevision === '2', b);
   await second.waitForFunction(id => document.querySelector(`[data-id="${id}"]`)?.dataset.layoutRevision === '2', b, { timeout: 7000 });
-  console.log('PASS: another tab receives changes through the existing four-second polling.');
+  console.log('PASS: another tab receives changes through live board synchronization.');
   if (screenshot) await second.screenshot({ path: screenshot });
   if (!space) await task.finish({ keep: [] });
   else await second.close();

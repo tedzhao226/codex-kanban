@@ -227,6 +227,8 @@ If the native integration cannot guarantee the required policy, keep remote exec
 The Desktop database and IPC are private implementation details.
 The documented App Server is another integration surface, but is not verified here as a replacement for controlling existing Desktop tasks. [OpenAI App Server documentation](https://learn.chatgpt.com/docs/app-server)
 
+For release stages, security gates, privacy choices, and effort estimates, see the [public-release security plan](plans/public-release-security.md).
+The earlier [architecture and session-state notes](../ARCHITECTURE.md) contain more detail on a proposed hosted session database.
 
 Verification: all four diagrams parsed and rendered in Ego Browser and were visually inspected.
 Local Markdown links and fence structure were checked.

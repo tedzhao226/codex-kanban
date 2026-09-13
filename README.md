@@ -4,6 +4,8 @@ A local Kanban board for your existing Codex desktop tasks.
 Open a card to read its conversation, reply, steer an active run, or stop it.
 Messages go to the original native task, keeping its history, workspace, model, and permissions.
 
+See [Architecture and session state](ARCHITECTURE.md) for the client/server map, current storage, and a proposed public service with per-user login.
+
 ## Run
 
 Requires macOS, Node.js 24 or newer, and the Codex desktop app installed with local tasks.
@@ -24,7 +26,8 @@ PORT=4318 npm start
 
 ## Use
 
-- Filter by project or search task titles and previews.
+- Filter by project, search task titles and previews, or use **Updated** to show the last day, last 3 days, last week, or all time.
+  Time ranges use the last update shown on each card, and the browser remembers your time filter after reload.
 - Drag a card between lanes or use its lane menu.
 - Drag above another card to set the order within a lane.
 - Choose **Follow task status** to restore automatic placement.
@@ -39,16 +42,24 @@ Automatic lanes use published desktop status: active tasks go to Running, approv
 Tasks without a live snapshot start in Backlog.
 Codex may only publish status after a task has been loaded in the desktop app.
 Done is always a manual choice.
-Once you move a card, its lane stays fixed until you move it again or restore automatic placement.
-Its runtime badge continues to show the current desktop status independently.
+Manual placement lasts until you move the card again, restore automatic placement, or Codex starts running or needs attention.
+New activity releases the manual lane, including Done, so the card follows Codex again and returns to Review when idle.
+Reordering a card within its automatic lane keeps status tracking enabled.
+Its runtime badge always shows the current desktop status.
 
 The board displays non-archived local user tasks.
 Cloud tasks and subagents are outside this version’s scope.
 Older tasks show saved history immediately.
 If a task is not loaded in the desktop app, choose **Connect in Codex** to open the original task and enable its controls.
 The panel renders a local view of the native conversation; it does not embed the desktop interface.
-Markdown and code blocks are supported, tool activity is collapsed, and images remain placeholders linking the workflow back to Codex.
-Raw HTML and non-HTTP links are disabled.
+Markdown and code blocks are supported, and tool activity is collapsed.
+Mermaid and SVG code blocks render as diagrams, with a **Source** disclosure below each preview.
+Standalone SVG markup and Markdown links or images pointing to `.svg` files in the task's workspace also show previews.
+Other images and attachments remain placeholders linking the workflow back to Codex.
+SVG previews are static images with scripts, embedded HTML, animation, and external image references removed.
+Other raw HTML and non-HTTP links are disabled.
+Invalid or incomplete diagrams show an error with their source and update when the message changes.
+Local SVG files are limited to 1 MB; Mermaid definitions are limited to 50,000 characters and 500 edges.
 History display is limited to the newest 10,000 messages and activities; use Codex for anything earlier.
 
 Reading earlier messages does not pull the scroll position back to the bottom as replies arrive.
@@ -79,7 +90,8 @@ Board lanes, card order, and layout revisions are stored separately in `.data/bo
 A persistent worker owns the SQLite connection, keeping board reads, writes, and lock waits off the HTTP thread.
 The supported setup is one local server with multiple browser tabs or API clients on the same Mac.
 Different cards can be edited concurrently; moving a card from a stale view returns a conflict and refreshes that editor without retrying the move.
-Other tabs refresh every four seconds, except that visible board replacement waits until an active drag or lane-selector interaction ends.
+Codex status changes and card moves notify all open boards immediately, with a four-second refresh for reconciliation.
+Visible board replacement waits until an active drag or lane-selector interaction ends; runtime badges continue updating during the interaction.
 
 On first startup, the server imports the existing `board.json` transactionally and archives it as `board.json.bak`.
 An existing backup is never overwritten; if it prevents archival, startup prints a warning and leaves both JSON files intact.
@@ -117,12 +129,15 @@ npm run check
 npm test
 ```
 
-Browser concurrency checks require Ego Lite and use an isolated fixture server with no native task actions:
+Browser regression checks require Ego Lite and use an isolated fixture server with no native task actions:
 
 ```sh
+npm run test:browser
+npm run test:time-filter
 npm run test:board:browser
+node scripts/verify-status-sync.mjs
 ```
 
 Tests cover SQLite migration, concurrent layout edits, revision conflicts, rollback and worker lifecycle, task discovery, IPC updates and revision recovery, transcript filtering and pagination, native reply/steer/stop routing, duplicate submission handling, and HTTP/SSE boundaries.
 The source uses Node’s built-in HTTP, SQLite, and test modules with a plain JavaScript browser UI.
-`marked` parses Markdown and `dompurify` sanitizes the rendered output; both are served locally.
+`marked` parses Markdown, `dompurify` sanitizes the rendered output, and `mermaid` renders diagrams; all are served locally.

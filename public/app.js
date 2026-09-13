@@ -4,7 +4,7 @@ const names = { backlog: 'Backlog', running: 'Running', 'needs-input': 'Needs in
 const runtimeNames = { 'not-loaded': 'Status unavailable', running: 'Running in Codex', 'needs-input': 'Waiting for you', idle: 'Idle in Codex', error: 'Task error' };
 const emptyText = { backlog: ['A clear starting point', 'Tasks without live status land here.'], running: ['Room to make progress', 'Active tasks appear here automatically.'], 'needs-input': ['Nothing waiting on you', 'Approvals and questions appear here.'], review: ['Ready when you are', 'Idle tasks land here for review.'], done: ['Make room for what’s next', 'Move finished work here.'] };
 const $ = selector => document.querySelector(selector);
-let state, project = '', search = '', signature = '', dragging = null, refreshPending, toastTimer;
+let state, project = '', search = '', days = 0, signature = '', dragging = null, refreshPending, toastTimer;
 let requestSequence = 0, appliedSequence = 0, renderDeferred = false;
 const pendingCards = new Set();
 const chat = createChatPanel({ getToken: () => state?.token, openNative: id => request(`/api/tasks/${id}/open`, {}),
@@ -41,15 +41,11 @@ async function request(path, body) {
   return data;
 }
 
-function renderProjects() {
-  const projects = new Map();
-  for (const task of state.tasks) {
-    const value = projects.get(task.projectId) || { name: task.projectName, count: 0 };
-    value.count++;
-    projects.set(task.projectId, value);
-  }
+function renderProjects(tasks) {
+  const projects = new Map(state.tasks.map(task => [task.projectId, { name: task.projectName, count: 0 }]));
+  for (const task of tasks) projects.get(task.projectId).count++;
   if (project && !projects.has(project)) project = '';
-  const choices = [['', { name: 'All projects', count: state.tasks.length }], ...[...projects].sort((a, b) => a[1].name.localeCompare(b[1].name))];
+  const choices = [['', { name: 'All projects', count: tasks.length }], ...[...projects].sort((a, b) => a[1].name.localeCompare(b[1].name))];
   $('#projects').replaceChildren(...choices.map(([id, item]) => {
     const button = element('button', 'project' + (id === project ? ' active' : ''));
     button.type = 'button';
@@ -59,6 +55,13 @@ function renderProjects() {
     return button;
   }));
   $('#heading').textContent = project ? projects.get(project).name : 'Task board';
+}
+
+function renderRuntime(node, task) {
+  node.className = `runtime ${task.runtime}`;
+  node.textContent = runtimeNames[task.runtime];
+  node.title = task.runtime === 'not-loaded' ? 'Codex has not published a live status for this task. Open it in Codex to load it.'
+    : task.manual ? 'Manual lane. New Codex activity restores automatic placement.' : 'This card follows its Codex task status.';
 }
 
 function card(task) {
@@ -79,8 +82,8 @@ function card(task) {
   title.setAttribute('aria-label', `View conversation: ${task.title}`);
   node.append(top, title);
   if (task.preview && task.preview !== task.title) node.append(element('p', 'preview', task.preview));
-  const runtime = element('span', `runtime ${task.runtime}`, runtimeNames[task.runtime]);
-  runtime.title = task.runtime === 'not-loaded' ? 'Codex has not published a live status for this task. Open it in Codex to load it.' : 'Live status is separate from your chosen board lane.';
+  const runtime = element('span');
+  renderRuntime(runtime, task);
   node.append(runtime);
   const footer = element('div', 'card-footer');
   const select = element('select', 'lane-select');
@@ -105,13 +108,23 @@ function card(task) {
 
 function render(force = false) {
   if (!state) return;
-  if (dragging || document.activeElement?.matches('.lane-select')) { renderDeferred = true; return; }
+  if (dragging || document.activeElement?.matches('.lane-select')) {
+    const tasks = new Map(state.tasks.map(task => [task.id, task]));
+    for (const node of document.querySelectorAll('.card')) {
+      const task = tasks.get(node.dataset.id);
+      if (task) renderRuntime(node.querySelector('.runtime'), task);
+    }
+    renderDeferred = true;
+    return;
+  }
   renderDeferred = false;
-  const next = JSON.stringify([state.tasks, state.connection, project, search, [...pendingCards]]);
+  const cutoff = days ? Date.now() - days * 86400000 : -Infinity;
+  const recent = state.tasks.filter(task => task.updatedAt >= cutoff);
+  const next = JSON.stringify([state.tasks, state.connection, project, search, days, recent.map(task => task.id), [...pendingCards]]);
   if (!force && signature === next) return;
   signature = next;
-  renderProjects();
-  const tasks = state.tasks.filter(task => (!project || task.projectId === project) && (!search || `${task.title} ${task.preview} ${task.projectName}`.toLowerCase().includes(search)));
+  renderProjects(recent);
+  const tasks = recent.filter(task => (!project || task.projectId === project) && (!search || `${task.title} ${task.preview} ${task.projectName}`.toLowerCase().includes(search)));
   const running = tasks.filter(task => task.runtime === 'running').length;
   $('#summary').textContent = `${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} · ${running} running`;
   const connection = $('#connection');
@@ -132,7 +145,7 @@ function render(force = false) {
     list.append(...matching.map(card));
     if (!matching.length) {
       const empty = element('div', 'empty');
-      empty.append(element('strong', '', search ? 'No matching tasks' : emptyText[id][0]), element('span', '', search ? 'Try a different search.' : emptyText[id][1]));
+      empty.append(element('strong', '', search || days ? 'No matching tasks' : emptyText[id][0]), element('span', '', days ? 'Try a wider time range or adjust your filters.' : search ? 'Try a different search.' : emptyText[id][1]));
       list.append(empty);
     }
     column.append(header, list);
@@ -196,6 +209,12 @@ $('#projects').addEventListener('click', event => {
   render(true);
 });
 $('#search').addEventListener('input', event => { search = event.target.value.toLowerCase().trim(); render(true); });
+$('#time-filter').addEventListener('change', event => {
+  days = Number(event.target.value);
+  render(true);
+  try { localStorage.setItem('kanban:time-filter', event.target.value); }
+  catch { toast('Your browser could not save the time filter. It will reset after reload.', true); }
+});
 $('#refresh').addEventListener('click', () => { signature = ''; refresh(); });
 document.addEventListener('keydown', event => {
   if (event.key === '/' && !event.metaKey && !event.ctrlKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) { event.preventDefault(); $('#search').focus(); }
@@ -263,5 +282,17 @@ $('#board').addEventListener('dragend', () => {
   render(true);
 });
 
+try {
+  const saved = localStorage.getItem('kanban:time-filter') ?? '0';
+  if (![...$('#time-filter').options].some(option => option.value === saved)) throw new Error('Invalid saved time filter.');
+  days = Number(saved);
+  $('#time-filter').value = saved;
+} catch { toast('Your saved time filter could not be read. Showing all time.', true); }
 refresh();
+const boardEvents = new EventSource('/api/board/events');
+boardEvents.onmessage = event => {
+  const update = JSON.parse(event.data);
+  if (update.error) toast(update.error, true);
+  refresh(true);
+};
 setInterval(refresh, 4000);

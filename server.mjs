@@ -10,11 +10,12 @@ import { TaskIndex } from './lib/tasks.mjs';
 import { DesktopFeed } from './lib/desktop.mjs';
 import { BoardStore, isThreadId, COLUMNS, runtimeLabel } from './lib/board.mjs';
 import { Conversations } from './lib/conversations.mjs';
+import { readTaskSvg } from './lib/assets.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const execute = promisify(execFile);
 const assets = { '/': ['public/index.html', 'text/html'], '/app.js': ['public/app.js', 'text/javascript'],
-  '/chat.js': ['public/chat.js', 'text/javascript'], '/markdown.js': ['public/markdown.js', 'text/javascript'],
+  '/chat.js': ['public/chat.js', 'text/javascript'], '/markdown.js': ['public/markdown.js', 'text/javascript'], '/diagrams.js': ['public/diagrams.js', 'text/javascript'],
   '/styles.css': ['public/styles.css', 'text/css'], '/chat.css': ['public/chat.css', 'text/css'], '/favicon.svg': ['public/favicon.svg', 'image/svg+xml'],
   '/vendor/marked.js': ['node_modules/marked/lib/marked.esm.js', 'text/javascript'],
   '/vendor/purify.js': ['node_modules/dompurify/dist/purify.es.mjs', 'text/javascript'] };
@@ -23,6 +24,8 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
   const token = randomBytes(32).toString('hex');
   const conversations = new Conversations(index, feed);
   const streams = new Set();
+  const boardStreams = new Set();
+  let boardUpdate, boardSignature = '';
   let threads = [], indexError = null, closing;
   const refresh = () => {
     try { threads = index.list(); feed.sync(threads.map(thread => thread.id)); indexError = null; }
@@ -37,12 +40,30 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
     if (indexError) throw new Error('Cannot read native Codex tasks: ' + indexError);
     return boardResponse(await store.arrange(nativeTasks()));
   }
+  function scheduleBoardUpdate() {
+    if (boardUpdate || closing) return;
+    boardUpdate = setTimeout(() => {
+      boardUpdate = null;
+      for (const stream of boardStreams) stream.write('data: {}\n\n');
+    }, 150);
+  }
+  const onFeedChange = () => {
+    const tasks = nativeTasks();
+    const signature = JSON.stringify([tasks, feed.connected, feed.message, indexError]);
+    if (signature === boardSignature) return;
+    boardSignature = signature;
+    store.arrange(tasks).then(scheduleBoardUpdate, error => {
+      boardSignature = '';
+      for (const stream of boardStreams) stream.write(`data: ${JSON.stringify({ error: 'Cannot sync card status: ' + error.message })}\n\n`);
+    });
+  };
+  feed.on('change', onFeedChange);
   const server = http.createServer(async (req, res) => {
     const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
     if (closing) return send(503, { error: 'The server is shutting down.' });
     const port = server.address().port;
     const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
@@ -50,13 +71,29 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
     const url = new URL(req.url, `http://${req.headers.host}`);
     try {
       if (req.method === 'GET' && url.pathname === '/api/board') { refresh(); return send(200, await snapshot()); }
+      if (req.method === 'GET' && url.pathname === '/api/board/events') {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Connection': 'keep-alive' });
+        res.write('data: {}\n\n');
+        boardStreams.add(res);
+        streams.add(res);
+        const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 10000);
+        res.on('close', () => { clearInterval(heartbeat); boardStreams.delete(res); streams.delete(res); });
+        return;
+      }
+      if (req.method === 'GET' && /^\/vendor\/mermaid\/(?:mermaid\.esm\.min\.mjs|chunks\/mermaid\.esm\.min\/[\w-]+\.mjs)$/.test(url.pathname)) {
+        try {
+          const data = await readFile(join(root, 'node_modules/mermaid/dist', url.pathname.slice('/vendor/mermaid/'.length)));
+          res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
+          return res.end(data);
+        } catch (error) { if (error.code === 'ENOENT') return send(404, { error: 'Diagram module not found.' }); throw error; }
+      }
       if (req.method === 'GET' && assets[url.pathname]) {
         const [name, type] = assets[url.pathname];
         const data = await readFile(join(root, name));
         res.writeHead(200, { 'Content-Type': type + '; charset=utf-8' });
         return res.end(data);
       }
-      const match = /^\/api\/tasks\/([^/]+)\/(open|move|reset|conversation|events|message|interrupt)$/.exec(url.pathname);
+      const match = /^\/api\/tasks\/([^/]+)\/(open|move|reset|conversation|events|message|interrupt|svg)$/.exec(url.pathname);
       if (!match) return send(404, { error: 'Not found.' });
       if (req.headers['x-kanban-token'] !== token) return send(403, { error: 'Reload the board before making changes.' });
       const [, id, action] = match;
@@ -97,6 +134,7 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
       let input;
       try { input = body ? JSON.parse(body) : {}; } catch { return send(400, { error: 'Invalid JSON.' }); }
       if (input === null || typeof input !== 'object' || Array.isArray(input)) return send(400, { error: 'Expected a JSON object.' });
+      if (action === 'svg') return send(200, { svg: await readTaskSvg(threads.find(thread => thread.id === id).cwd, input.path) });
       if (action === 'message' || action === 'interrupt') return send(200, await conversations.act(id, action, input));
       if (action === 'open') { await openThread(id); return send(200, { opened: true, threadId: id }); }
       if (!Number.isSafeInteger(input.expectedLayoutRevision) || input.expectedLayoutRevision < 0) return send(400, { error: 'A valid expectedLayoutRevision is required.' });
@@ -109,12 +147,15 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
         if (!COLUMNS.includes(input.column) || (input.beforeId != null && !isThreadId(input.beforeId))) return send(400, { error: 'Invalid destination.' });
         board = await store.move(id, input.column, input.beforeId ?? null, nativeTasks(), input.expectedLayoutRevision);
       }
+      scheduleBoardUpdate();
       return send(200, boardResponse(board));
     } catch (error) { return send(error.status ?? 500, { error: error.message, uncertain: error.uncertain ?? false }); }
   });
   return { server, snapshot, close() {
     if (!closing) closing = (async () => {
       clearInterval(timer);
+      clearTimeout(boardUpdate);
+      feed.off('change', onFeedChange);
       const stopped = new Promise((resolve, reject) => server.close(error => error && error.code !== 'ERR_SERVER_NOT_RUNNING' ? reject(error) : resolve()));
       for (const stream of streams) stream.end();
       await stopped;

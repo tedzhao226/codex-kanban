@@ -11,7 +11,7 @@
 .chat-notice { padding:13px 22px; background:#292b20; color:#c6c8a8; font-size:12px; line-height:1.6; border-bottom:1px solid #454732; }
 .chat-notice button,.chat-delivery button { background:transparent; border:0; color:#d0e8b9; text-decoration:underline; padding:7px 0 0; display:block; font-size:12px; }
 .chat-error { margin:12px 20px 0; padding:11px 13px; background:#39271c; color:#edc29a; border:1px solid #67482b; border-radius:5px; font-size:12px; line-height:1.6; }
-.chat-timeline { overflow-y:auto; flex:1; min-height:0; padding:22px; scroll-behavior:auto; }
+.chat-timeline { overflow-y:auto; flex:1; min-height:0; padding:22px; scroll-behavior:auto; overflow-anchor:none; }
 #chat-earlier { display:block; margin:0 auto 24px; font-size:12px; }
 .chat-message { margin:0 0 23px; font-size:14px; line-height:1.65; overflow-wrap:anywhere; }
 .chat-message.user { border:1px solid #3d4b34; background:#242e20; border-radius:9px; padding:12px 15px; margin-left:24px; }
@@ -27,6 +27,15 @@
 .message-body pre { background:#0f140e; padding:14px; border:1px solid #36422e; border-radius:6px; white-space:pre; overflow-x:auto; font-size:12px; line-height:1.6; }
 .message-body code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; background:#0f140e; border-radius:3px; padding:2px 4px; font-size:.9em; }
 .message-body pre code { padding:0; }
+.diagram { display:block; margin:14px 0; border:1px solid #36422e; border-radius:6px; background:#0f140e; overflow:hidden; }
+.diagram-preview { display:block; overflow:auto; padding:14px; }
+.diagram-preview img { display:block; width:100%; height:auto; min-height:40px; }
+.diagram details { padding:8px 12px; border-top:1px solid #36422e; font-size:12px; }
+.diagram summary { cursor:pointer; color:#adbea0; }
+.diagram pre { border:0; padding:8px 0; margin:0; }
+.diagram-status { display:block; padding:12px; font-size:12px; color:#adbea0; }
+.diagram-error { color:#edc29a; }
+.diagram-render-stage { position:fixed; left:-10000px; top:0; width:1000px; visibility:hidden; }
 .message-body blockquote { margin:12px 0; padding-left:13px; border-left:2px solid #768e62; color:#b0c09f; }
 .message-body table { display:block; overflow-x:auto; border-collapse:collapse; font-size:12px; }
 .message-body td,.message-body th { padding:7px 10px; border:1px solid #435336; text-align:left; }

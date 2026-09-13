@@ -197,6 +197,7 @@ h1 {
 }
 .toolbar {
   display:flex;
+  flex-wrap:wrap;
   align-items:center;
   gap:20px;
   padding-bottom:25px;
@@ -241,6 +242,20 @@ h1 {
   color:#a4af9b;
   font-size:12px;
   flex:1;
+}
+.time-filter {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#a4af9b;
+  font-size:12px;
+}
+.time-filter select {
+  padding:9px 10px;
+  border:1px solid #343a30;
+  border-radius:7px;
+  background:#1c201b;
+  color:#e6ecdf;
 }
 .quiet-button {
   padding:8px 10px;
@@ -649,6 +664,7 @@ footer {
   }
   .search {
     width:auto;
+    flex-basis:100%;
   }
   footer {
     padding:7px 16px 18px;

@@ -5,7 +5,7 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
   const panel = $('#chat-panel'), timeline = $('#chat-timeline'), messages = $('#chat-messages'), input = $('#chat-input');
   let task = null, view = null, limit = 50, generation = 0, controller, reconnect, sending = false, stopping = false, oldLimit = 50;
   const rows = new Map(), drafts = new Map();
-  let streamError = '', historyError = '';
+  let streamError = '', historyError = '', followLatest = true, lastScrollTop = 0;
   function showError(message) { $('#chat-error').textContent = message; $('#chat-error').hidden = !message; }
   function draft(id) {
     if (!drafts.has(id)) {
@@ -60,7 +60,17 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
       if (item.kind === 'tool') {
         entry.node.querySelector('summary').textContent = `${item.title} · ${item.status}`;
         entry.node.querySelector('pre').textContent = item.detail || 'No additional output.';
-      } else renderMarkdown(entry.node.querySelector('.message-body'), item.text);
+      } else {
+        const id = task.id;
+        renderMarkdown(entry.node.querySelector('.message-body'), item.text, { loadSvg: async path => (await api(id, 'svg', { path })).svg,
+          onLayout: update => {
+            update();
+            if (task?.id !== id) return;
+            if (followLatest && !window.getSelection()?.toString()) timeline.scrollTop = timeline.scrollHeight;
+            lastScrollTop = timeline.scrollTop;
+            $('#chat-latest').hidden = timeline.scrollHeight - timeline.clientHeight - timeline.scrollTop < 80;
+          } });
+      }
       entry.signature = signature;
     }
     return entry.node;
@@ -68,6 +78,7 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
   function render(next) {
     if (next.unavailable) { showError(next.error); view = { ...view, connected: false, canSend: false, canSteer: false, canStop: false }; controls(); return; }
     const first = !view, top = timeline.scrollTop, height = timeline.scrollHeight, bottom = height - timeline.clientHeight - top < 80;
+    followLatest = first || (bottom && !window.getSelection()?.toString());
     view = next;
     const ids = new Set(view.items.map(item => item.id));
     for (const [id, entry] of rows) if (!ids.has(id)) { entry.node.remove(); rows.delete(id); }
@@ -81,9 +92,10 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
     $('#chat-empty').textContent = view.loadingHistory ? 'Loading conversation…' : 'No messages to show yet.';
     $('#chat-earlier').hidden = !view.hasEarlier; $('#chat-earlier').disabled = limit >= 10000;
     $('#chat-earlier').textContent = limit >= 10000 ? 'Open in Codex for messages before these 10,000' : '↑ Load earlier';
-    if (first || (bottom && !window.getSelection()?.toString())) timeline.scrollTop = timeline.scrollHeight;
+    if (followLatest) timeline.scrollTop = timeline.scrollHeight;
     else if (limit > oldLimit) timeline.scrollTop = top + timeline.scrollHeight - height;
     else timeline.scrollTop = top;
+    lastScrollTop = timeline.scrollTop;
     oldLimit = limit;
     $('#chat-latest').hidden = timeline.scrollHeight - timeline.clientHeight - timeline.scrollTop < 80;
     if (historyError && $('#chat-error').textContent === historyError) showError('');
@@ -171,7 +183,11 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
   });
   $('#chat-earlier').addEventListener('click', () => { limit = Math.min(limit + 50, 10000); $('#chat-earlier').disabled = true; stream(task.id, generation); });
   $('#chat-latest').addEventListener('click', () => { timeline.scrollTop = timeline.scrollHeight; $('#chat-latest').hidden = true; });
-  timeline.addEventListener('scroll', () => { $('#chat-latest').hidden = timeline.scrollHeight - timeline.clientHeight - timeline.scrollTop < 80; });
+  timeline.addEventListener('scroll', () => {
+    const bottom = timeline.scrollHeight - timeline.clientHeight - timeline.scrollTop < 80;
+    if (timeline.scrollTop !== lastScrollTop) followLatest = bottom;
+    lastScrollTop = timeline.scrollTop; $('#chat-latest').hidden = bottom;
+  });
   $('#chat-close').addEventListener('click', close);
   $('#chat-expand').addEventListener('click', () => { const expanded = panel.classList.toggle('expanded'); $('#chat-expand').setAttribute('aria-label', expanded ? 'Restore conversation panel' : 'Expand conversation'); });
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && task) close(); });
