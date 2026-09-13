@@ -25,6 +25,7 @@ test('task library includes native tasks with an unset legacy user-event flag an
   const before = readFileSync(path);
   const index = new TaskIndex(directory);
   const tasks = index.list();
+  assert.deepEqual(index.projects().map(project => project.id), ['parent', 'repo']);
   t.after(() => index.close());
   assert.equal(tasks.length, 3);
   assert.equal(tasks.find(task => task.id === 'worktree').projectId, 'repo');

@@ -26,6 +26,8 @@
         <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search tasks…" aria-label="Search tasks" autocomplete="off"><kbd>/</kbd></label>
         <label class="time-filter"><span>Updated</span><select id="time-filter" aria-label="Filter by last update" title="Show tasks updated within this time range"><option value="0">All time</option><option value="1">Last day</option><option value="3">Last 3 days</option><option value="7">Last week</option></select></label>
         <span id="summary" class="summary">Loading tasks…</span>
+        <button id="new-task" class="quiet-button create-project-button" type="button" disabled>+ New task</button>
+        <button id="new-project" class="quiet-button create-project-button" type="button" disabled>+ New project</button>
         <button id="refresh" class="quiet-button" type="button">↻ <span>Refresh</span></button>
       </div>
     </header>
@@ -47,10 +49,39 @@
     <form id="chat-composer" class="chat-composer">
       <label for="chat-input" class="composer-label">Continue this conversation</label>
       <textarea id="chat-input" rows="3" maxlength="32000" placeholder="Write a message…" spellcheck="true"></textarea>
+      <div id="chat-images" class="chat-images" aria-label="Attached images" hidden></div>
+      <input id="chat-image-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
       <div id="chat-delivery" class="chat-delivery" hidden><span>Delivery wasn’t confirmed. Check the conversation before resending.</span><button id="chat-checked" type="button">I checked — keep editing</button></div>
-      <div class="composer-footer"><span id="composer-hint">⌘ / Ctrl + Enter to send</span><div><button id="chat-stop" class="stop-button" type="button" hidden>■ Stop</button><button id="chat-send" class="send-button" type="submit" disabled>Send ↑</button></div></div>
+      <div class="composer-footer"><button id="chat-attach" class="quiet-button" type="button" title="Choose or paste up to 4 images, 3 MB total">+ Image</button><span id="composer-hint">⌘ / Ctrl + Enter to send</span><div><button id="chat-stop" class="stop-button" type="button" hidden>■ Stop</button><button id="chat-send" class="send-button" type="submit" disabled>Send ↑</button></div></div>
     </form>
   </aside>
   <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="task-dialog" aria-labelledby="task-dialog-title">
+    <form id="task-form">
+      <div class="project-dialog-heading"><h2 id="task-dialog-title">New task</h2><button id="task-close" class="quiet-button" type="button" aria-label="Close new task">×</button></div>
+      <p>Start a Codex task and continue it here.</p>
+      <label for="task-project">Project</label>
+      <select id="task-project" required autofocus></select>
+      <button id="task-new-project" class="quiet-button" type="button">+ New project</button>
+      <p class="project-help">Uses the project’s existing folder.</p>
+      <label for="task-prompt">What would you like to do?</label>
+      <textarea id="task-prompt" rows="6" required maxlength="32000" placeholder="Describe the task…"></textarea>
+      <div id="task-error" class="project-error" role="alert" hidden></div>
+      <button id="task-recover" class="quiet-button" type="button" hidden>View task</button>
+      <button id="task-clear" class="quiet-button" type="button" hidden>Clear this form</button>
+      <div class="project-dialog-actions"><button id="task-cancel" class="quiet-button" type="button">Cancel</button><button id="task-submit" class="send-button" type="submit">Create task</button></div>
+    </form>
+  </dialog>
+  <dialog id="project-dialog" aria-labelledby="project-dialog-title">
+    <form id="project-form">
+      <div class="project-dialog-heading"><h2 id="project-dialog-title">New project</h2><button id="project-close" class="quiet-button" type="button" aria-label="Close new project">×</button></div>
+      <p>Create a folder or add an existing one. Its folder name becomes the project name.</p>
+      <label for="project-path">Project folder</label>
+      <input id="project-path" name="path" type="text" required maxlength="4096" placeholder="~/workspace/my-project" autocomplete="off" spellcheck="false" autofocus>
+      <p class="project-help">For a new folder, its parent must already exist. Codex registers the project automatically.</p>
+      <div id="project-error" class="project-error" role="alert" hidden></div>
+      <div class="project-dialog-actions"><button id="project-cancel" class="quiet-button" type="button">Cancel</button><button id="project-submit" class="send-button" type="submit">Create project</button></div>
+    </form>
+  </dialog>
 </body>
 </html>

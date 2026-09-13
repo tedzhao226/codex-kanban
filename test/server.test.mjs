@@ -11,7 +11,7 @@ import { createApp } from '../server.mjs';
 import { BoardStore } from '../lib/board.mjs';
 
 const id = '11111111-1111-1111-1111-111111111111';
-async function fixture(t, ids = [id]) {
+async function fixture(t, ids = [id], options = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'kanban-server-'));
   const opened = [];
   const storePath = join(directory, 'board.sqlite');
@@ -19,11 +19,15 @@ async function fixture(t, ids = [id]) {
   writeFileSync(rolloutPath, '');
   const feed = Object.assign(new EventEmitter(), { states: new Map(), conversations: new Map(), connected: true, protocolOK: true,
     message: 'Connected to Codex', sync() {}, close() {}, retain: () => () => {}, loadHistory: async () => {} });
-  const index = { list: () => ids.map(id => ({ id, cwd: directory, title: 'Existing native chat', updatedAt: 1 })), rolloutPath: () => rolloutPath, close() {} };
+  const projects = [];
+  const index = { projects: () => projects, list: () => ids.map(id => ({ id, cwd: directory, title: 'Existing native chat', updatedAt: 1 })), rolloutPath: () => rolloutPath, close() {} };
   const app = createApp({
     index,
     feed,
     store: await BoardStore.open(storePath), openThread: async value => { opened.push(value); },
+    openProject: async url => { projects.push({ id: 'new-project', name: 'New project', rootPaths: [new URL(url).searchParams.get('path')] }); },
+    requestDirectory: join(directory, 'task-requests'),
+    saveTask: options.saveTask ?? (async () => { throw new Error('Unexpected native task creation in a fixture.'); }),
   });
   app.server.listen(0, '127.0.0.1');
   await once(app.server, 'listening');
@@ -177,6 +181,23 @@ test('local API rejects foreign origins, hosts and missing mutation tokens', asy
   assert.deepEqual(opened, []);
 });
 
+test('project creation requires local authorization and publishes projects with no tasks', async t => {
+  const { base, board, directory, feed } = await fixture(t, []);
+  const input = { path: join(directory, 'empty-project') };
+  const post = headers => fetch(base + '/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(input) });
+  assert.equal((await post({})).status, 403);
+  assert.equal((await post({ 'x-kanban-token': board.token, Origin: 'https://foreign.example' })).status, 403);
+  feed.connected = false;
+  assert.equal((await post({ 'x-kanban-token': board.token })).status, 503);
+  feed.connected = true;
+  const response = await post({ 'x-kanban-token': board.token });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).project.id, 'new-project');
+  const refreshed = await (await fetch(base + '/api/board')).json();
+  assert.equal(refreshed.projects[0].id, 'new-project');
+  assert.deepEqual(refreshed.tasks, []);
+});
+
 test('invalid card actions return useful errors without changing the board', async t => {
   const { base, post, board } = await fixture(t);
   assert.equal((await post('move', { column: 'other' })).status, 400);
@@ -186,6 +207,32 @@ test('invalid card actions return useful errors without changing the board', asy
   assert.equal((await (await fetch(base + '/api/board')).json()).tasks[0].column, 'backlog');
 });
 
+test('task creation requires local authorization and returns the confirmed native identity', async t => {
+  let f, saves = 0, prompts = 0;
+  f = await fixture(t, [], { saveTask: async params => {
+    saves++; await params.onCreated(id);
+    f.index.list = () => [{ id, projectId: 'project', title: 'New native task', cwd: f.directory }];
+    f.feed.states.set(id, { threadRuntimeStatus: { type: 'idle' } });
+    f.feed.conversations.set(id, { owner: 'fixture', state: { turns: [] } });
+    return id;
+  } });
+  f.index.projects().push({ id: 'project', name: 'Fixture project', rootPaths: [f.directory] });
+  f.feed.owner = async () => 'fixture';
+  f.feed.request = async () => { prompts++; return { result: { result: { turnId: 'first-turn' } } }; };
+  const body = JSON.stringify({ requestId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', projectId: 'project', prompt: 'Start the task.' });
+  const post = headers => fetch(f.base + '/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body });
+  assert.equal((await post({})).status, 403);
+  assert.equal((await post({ 'x-kanban-token': f.board.token, Origin: 'https://foreign.example' })).status, 403);
+  assert.equal(saves, 0);
+  const response = await post({ 'x-kanban-token': f.board.token });
+  assert.equal(response.status, 201);
+  const created = await response.json();
+  assert.equal(created.task.id, id); assert.equal(created.turnId, 'first-turn');
+  assert.equal((await post({ 'x-kanban-token': f.board.token })).status, 201);
+  assert.equal(saves, 1); assert.equal(prompts, 1);
+  assert.equal((await (await fetch(f.base + '/api/board')).json()).tasks[0].id, id);
+});
+
 test('page is served with no-cache and script isolation headers', async t => {
   const { base } = await fixture(t);
   const response = await fetch(base);
@@ -193,6 +240,24 @@ test('page is served with no-cache and script isolation headers', async t => {
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.match(await response.text(), /Codex Kanban/);
+});
+
+test('image messages pass authenticated HTTP validation and reach the native input', async t => {
+  const { post, feed } = await fixture(t);
+  const images = [{ name: 'screenshot.png', dataUrl: 'data:image/png;base64,' + Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(160000)]).toString('base64') }];
+  const calls = [];
+  feed.states.set(id, { threadRuntimeStatus: { type: 'idle' } });
+  feed.conversations.set(id, { owner: 'fixture', state: { turns: [] } });
+  feed.owner = async () => 'fixture';
+  feed.request = async (method, params) => { calls.push(params.turnStart.request.input); return { result: { result: { turnId: 'run' } } }; };
+  const input = { messageId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', text: '', intent: 'send', images };
+  assert.equal((await post('message', input, { 'x-kanban-token': '' })).status, 403);
+  assert.equal((await post('message', input, { Origin: 'https://untrusted.example' })).status, 403);
+  assert.equal((await post('message', input)).status, 200);
+  assert.deepEqual(calls, [[{ type: 'image', url: images[0].dataUrl }]]);
+  assert.equal((await post('message', { ...input, images: [{ ...images[0], dataUrl: 'data:image/png;base64,SGVsbG8=' }] })).status, 400);
+  assert.equal((await post('message', { ...input, images: [{ ...images[0], dataUrl: 'x'.repeat(4400000) }] })).status, 413);
+  assert.equal(calls.length, 1);
 });
 
 test('SVG previews require the local token and return workspace assets as JSON', async t => {

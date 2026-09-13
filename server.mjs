@@ -11,29 +11,33 @@ import { DesktopFeed } from './lib/desktop.mjs';
 import { BoardStore, isThreadId, COLUMNS, runtimeLabel } from './lib/board.mjs';
 import { Conversations } from './lib/conversations.mjs';
 import { readTaskSvg } from './lib/assets.mjs';
+import { projectCreator } from './lib/projects.mjs';
+import { taskCreator } from './lib/task-creation.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const execute = promisify(execFile);
 const assets = { '/': ['public/index.html', 'text/html'], '/app.js': ['public/app.js', 'text/javascript'],
-  '/chat.js': ['public/chat.js', 'text/javascript'], '/markdown.js': ['public/markdown.js', 'text/javascript'], '/diagrams.js': ['public/diagrams.js', 'text/javascript'],
+  '/chat.js': ['public/chat.js', 'text/javascript'], '/images.js': ['public/images.js', 'text/javascript'], '/markdown.js': ['public/markdown.js', 'text/javascript'], '/diagrams.js': ['public/diagrams.js', 'text/javascript'],
   '/styles.css': ['public/styles.css', 'text/css'], '/chat.css': ['public/chat.css', 'text/css'], '/favicon.svg': ['public/favicon.svg', 'image/svg+xml'],
   '/vendor/marked.js': ['node_modules/marked/lib/marked.esm.js', 'text/javascript'],
   '/vendor/purify.js': ['node_modules/dompurify/dist/purify.es.mjs', 'text/javascript'] };
 
-export function createApp({ index, feed, store, openThread = id => execute('/usr/bin/open', [`codex://threads/${id}`]) }) {
+export function createApp({ index, feed, store, openThread = (id, background = false) => execute('/usr/bin/open', [...(background ? ['-g'] : []), `codex://threads/${id}`]), openProject = url => execute('/usr/bin/open', ['-g', url]), saveTask, requestDirectory = join(root, '.data', 'task-requests') }) {
   const token = randomBytes(32).toString('hex');
   const conversations = new Conversations(index, feed);
   const streams = new Set();
   const boardStreams = new Set();
   let boardUpdate, boardSignature = '';
-  let threads = [], indexError = null, closing;
+  let threads = [], projects = [], indexError = null, closing;
+  const createProject = projectCreator({ listProjects: () => index.projects(), openProject });
+  const createTask = taskCreator({ index, feed, conversations, openThread: id => openThread(id, true), requestDirectory, saveTask });
   const refresh = () => {
-    try { threads = index.list(); feed.sync(threads.map(thread => thread.id)); indexError = null; }
+    try { threads = index.list(); projects = index.projects(); feed.sync(threads.map(thread => thread.id)); indexError = null; }
     catch (error) { indexError = error.message; }
     syncBoard();
   };
   const nativeTasks = () => threads.map(thread => ({ ...thread, runtime: runtimeLabel(feed.states.get(thread.id)) }));
-  const boardResponse = board => ({ ...board, columns: COLUMNS, connection: { connected: feed.connected, message: feed.message }, token, refreshedAt: Date.now() });
+  const boardResponse = board => ({ ...board, projects, columns: COLUMNS, connection: { connected: feed.connected, message: feed.message }, token, refreshedAt: Date.now() });
   async function snapshot() {
     if (indexError) throw new Error('Cannot read native Codex tasks: ' + indexError);
     return boardResponse(await store.arrange(nativeTasks()));
@@ -48,7 +52,7 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
   function syncBoard() {
     if (closing) return;
     const tasks = nativeTasks();
-    const signature = JSON.stringify([tasks, feed.connected, feed.message, indexError]);
+    const signature = JSON.stringify([tasks, projects, feed.connected, feed.message, indexError]);
     if (signature === boardSignature) return;
     boardSignature = signature;
     if (indexError) { scheduleBoardUpdate(); return; }
@@ -96,6 +100,22 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
         res.writeHead(200, { 'Content-Type': type + '; charset=utf-8' });
         return res.end(data);
       }
+      if (url.pathname === '/api/projects' || url.pathname === '/api/tasks') {
+        const creatingTask = url.pathname === '/api/tasks';
+        if (req.method !== 'POST') return send(405, { error: 'Use POST to create a project or task.' });
+        if (req.headers['x-kanban-token'] !== token) return send(403, { error: 'Reload the board before making changes.' });
+        if (!creatingTask && !feed.connected) return send(503, { error: 'Open Codex normally before creating a project.' });
+        const chunks = []; let bytes = 0;
+        for await (const chunk of req) { bytes += chunk.length; if (bytes > (creatingTask ? 150000 : 20000)) return send(413, { error: 'Request is too large.' }); chunks.push(chunk); }
+        const body = Buffer.concat(chunks).toString('utf8');
+        let input;
+        try { input = JSON.parse(body); } catch { return send(400, { error: 'Invalid JSON.' }); }
+        if (input === null || typeof input !== 'object' || Array.isArray(input)) return send(400, { error: 'Expected a JSON object.' });
+        if (closing) return send(503, { error: 'The server is shutting down.' });
+        const result = await (creatingTask ? createTask(input) : createProject(input));
+        refresh();
+        return send(creatingTask ? 201 : 200, result);
+      }
       const match = /^\/api\/tasks\/([^/]+)\/(open|move|reset|conversation|events|message|interrupt|svg)$/.exec(url.pathname);
       if (!match) return send(404, { error: 'Not found.' });
       if (req.headers['x-kanban-token'] !== token) return send(403, { error: 'Reload the board before making changes.' });
@@ -105,7 +125,10 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
         if (req.method !== 'GET') return send(405, { error: 'Use GET for conversation reads.' });
         const limit = Number(url.searchParams.get('limit') ?? 50);
         if (!Number.isInteger(limit) || limit < 1 || limit > 10000) return send(400, { error: 'Invalid history limit.' });
-        if (action === 'conversation') return send(200, await conversations.view(id, limit));
+        if (action === 'conversation') {
+          if (url.searchParams.has('live') && url.searchParams.get('live') !== '1') return send(400, { error: 'Invalid live history option.' });
+          return send(200, await (url.searchParams.has('live') ? conversations.liveView(id, limit) : conversations.view(id, limit)));
+        }
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Connection': 'keep-alive' });
         res.flushHeaders();
         streams.add(res);
@@ -132,8 +155,10 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
         return;
       }
       if (req.method !== 'POST') return send(405, { error: 'Use POST for task actions.' });
-      let body = '';
-      for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 150000) return send(413, { error: 'Request is too large.' }); }
+      const chunks = [];
+      let bytes = 0;
+      for await (const chunk of req) { bytes += chunk.length; if (bytes > (action === 'message' ? 4400000 : 150000)) return send(413, { error: 'Request is too large.' }); chunks.push(chunk); }
+      const body = Buffer.concat(chunks).toString('utf8');
       let input;
       try { input = body ? JSON.parse(body) : {}; } catch { return send(400, { error: 'Invalid JSON.' }); }
       if (input === null || typeof input !== 'object' || Array.isArray(input)) return send(400, { error: 'Expected a JSON object.' });
@@ -152,7 +177,7 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
       }
       scheduleBoardUpdate();
       return send(200, boardResponse(board));
-    } catch (error) { return send(error.status ?? 500, { error: error.message, uncertain: error.uncertain ?? false }); }
+    } catch (error) { return send(error.status ?? 500, { error: error.message, uncertain: error.uncertain ?? false, ...(error.threadId ? { threadId: error.threadId } : {}) }); }
   });
   return { server, close() {
     if (!closing) closing = (async () => {
