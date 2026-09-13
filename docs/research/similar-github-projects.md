@@ -81,4 +81,4 @@ This is a bounded search result, not a claim that no identical project exists.
 
 Repositories, READMEs, and selected integration source were inspected; no competing application was installed or exercised.
 The popularity and activity section reports a dated API snapshot; its assessments describe observed development signals rather than a runtime quality evaluation.
-The live Markdown rule at `/Users/ted/.codex/rules/markdown.md` was missing; authoring used `/Users/ted/workspace/agent-system/backups/codex/rules/markdown.md`.
+The live Markdown rule was unavailable during this dated research pass; authoring used a local backup. No private path is required to reproduce the findings.

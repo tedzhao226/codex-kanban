@@ -70,7 +70,7 @@ Each move/reset checks `expectedLayoutRevision`, updates current lane order, and
 The HTTP interface returns `boardRevision` and per-task `layoutRevision`; a stale edit receives HTTP 409 without a write.
 Browsers allow different cards to remain pending independently and discard older snapshots by revision and request sequence.
 This supports multiple clients of one server, not multiple server processes or databases on network filesystems.
-The legacy JSON is imported once and retained as a backup; see [backup and reset instructions](README.md#board-backup-and-reset).
+The legacy JSON is imported once and retained as a backup; see [backup and reset instructions](README.md#back-up-or-reset-local-board-state).
 The server also retains recent submission IDs only in memory, so it cannot guarantee duplicate suppression across a restart.
 
 ### What the current token means
@@ -204,7 +204,7 @@ A public client must scope local drafts to its website user and clear private UI
 | Fully hosted runner | Each tenant gets an isolated runtime, workspace storage, and runtime credentials. | Appropriate when users need execution while their computers are off. Requires a new execution backend. |
 
 The companion design preserves this repo's defining behavior: messages continue the original desktop task.
-Its existing database schema and desktop IPC are private interfaces, so the adapter remains sensitive to Codex updates. [Integration limitations](README.md#local-integration)
+Its existing database schema and desktop IPC are private interfaces, so the adapter remains sensitive to Codex updates. [Integration limitations](README.md#configuration-and-data)
 
 A hosted runner should sit behind the authenticated API, with isolated filesystem access, resource limits, and private runtime transport.
 It needs durable workspace/history storage and recovery rules for interrupted runs; the web application's session database cannot restore an in-flight process.

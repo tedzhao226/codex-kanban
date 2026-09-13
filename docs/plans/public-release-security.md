@@ -255,7 +255,7 @@ This label applies to the planning cross-check, not to the security of the imple
 Application tests and live attack simulations were not run for this planning-only change.
 Both planning documents passed local-link and Markdown structure checks; all five Mermaid diagrams parsed and rendered in Ego Browser, with visual inspection.
 No runtime hardening, provider configuration, publication, or deployment is claimed.
-The live `/Users/ted/.codex/rules/markdown.md` was missing; its stored backup supplied the Markdown formatting rules.
+The live Markdown rule was unavailable during this dated research pass; a local backup supplied formatting guidance.
 
 ---
 
