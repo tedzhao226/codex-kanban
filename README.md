@@ -57,7 +57,7 @@ Without linking, use `npm run cli -- --help`. Use complete IDs returned by list 
 
 The server binds to `127.0.0.1` and uses a per-process request token for protected routes. This token is not login or user authentication. `PORT` changes the port; `CODEX_HOME` changes where Codex data is read. Kanban's layout and request records are stored under `.data/`, which is local state and is ignored by Git. Browser drafts remain in tab session storage.
 
-Codex's database, rollout files, credentials, and Desktop IPC are private implementation details. This adapter was developed against Codex Desktop `26.908.40834` (build `8881`) and its bundled Codex CLI `0.154.0-alpha.6.2`, with IPC state version 11 and observed follower request versions. A Desktop update may require adapter changes; these observations are not compatibility promises. See [architecture and session state](ARCHITECTURE.md) and [compatibility](docs/compatibility.md).
+Codex's database, rollout files, credentials, and Desktop IPC are private implementation details. Dated observations on 2026-09-13 recorded Codex Desktop app version `26.908.40834`, build `8881`, with bundled Codex CLI `0.154.0-alpha.6.2`; the adapter also observed IPC state version 11 and follower request versions. A Desktop update may require adapter changes; these observations are not compatibility promises. See [architecture and session state](ARCHITECTURE.md) and [compatibility](docs/compatibility.md).
 
 Set `KANBAN_CODEX_BIN` to the bundled Codex CLI path when the Desktop app is installed outside `/Applications`. Task creation request records live in `.data/task-requests` and survive restarts; keep them, because they provide duplicate-submission protection. See [usage](docs/usage.md) for details.
 
@@ -80,15 +80,19 @@ Set `KANBAN_CODEX_BIN` to the bundled Codex CLI path when the Desktop app is ins
 - [Security](SECURITY.md)
 - [Local source release checklist](docs/release-checklist.md)
 
+Reference material is grouped in [architecture and data flow](docs/architecture-and-data-flow.md), [research](docs/research/), and [planning](docs/plans/). These documents contain dated observations and proposals, not additional compatibility promises.
+
 The proposed hosted design in the architecture documents is planning material. The current release is local-only.
 
 ## Back up or reset local board state
 
-Stop the server before copying `.data/board.sqlite`; while the server runs, committed data may also be in its WAL file. For an online backup, use SQLite's backup command with owner-only permissions:
+Stop the server and wait for it to shut down cleanly before copying `.data/board.sqlite`; while the server runs, committed data may also be in the `board.sqlite-wal` sidecar. For an online backup, use SQLite's backup command with owner-only permissions:
 
 ```sh
 umask 077
 sqlite3 .data/board.sqlite ".backup '.data/board-backup.sqlite'"
 ```
 
-To reset, stop the server, keep a backup, and remove `board.sqlite` together with any `board.sqlite-wal` and `board.sqlite-shm` sidecars. Restore only a verified backup with the server stopped.
+To reset, stop the server, keep a backup, and remove `board.sqlite` together with both `board.sqlite-wal` and `board.sqlite-shm` sidecars. Ensure no active legacy `board.json` remains in `.data/`, or the next startup reimports it; `board.json.bak` is never imported.
+
+To restore, use only a verified SQLite backup with the server stopped: copy it over `board.sqlite`, remove any stale `board.sqlite-wal` and `board.sqlite-shm` sidecars, then restart the server and reload open tabs. Preserve `.data/task-requests` when resetting or restoring, because those records provide duplicate-creation protection.

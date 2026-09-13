@@ -5,6 +5,6 @@
 - [ ] Configure a private vulnerability-reporting channel.
 - [ ] Complete a clean Mac/native compatibility smoke test against the intended Codex Desktop build.
 - [ ] Review repository history for personal data before publishing.
-- [ ] Mika reviews the source release and owner decisions before publishing.
+- [ ] A maintainer reviews the source release and owner decisions before publishing.
 
 Hosted login, remote execution, cloud persistence, and multi-user authorization are future requirements, not release criteria for this local application.
