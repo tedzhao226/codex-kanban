@@ -1,6 +1,6 @@
 ## Compatibility and support
 
-The supported target for this alpha is macOS with Node.js 24 or newer and the Codex Desktop app installed with local tasks. The app was developed against the installed Codex Desktop `0.154.0-alpha.6.2`; the adapter targets private IPC state version 11 and observed follower request versions. These are observations, not compatibility promises. A Desktop update can require adapter changes.
+The supported target for this alpha is macOS with Node.js 24 or newer and the Codex Desktop app installed with local tasks. The app was developed against Codex Desktop `26.908.40834` (build `8881`) and its bundled Codex CLI `0.154.0-alpha.6.2`; the adapter targets private IPC state version 11 and observed follower request versions. These are observations, not compatibility promises. A Desktop update can require adapter changes.
 
 The default test suite is fixture-only and does not prove native Desktop compatibility. A clean Mac smoke test, including a harmless native setup probe and the intended local workflows, is required before a release. Do not perform native task actions in CI.
 

@@ -51,13 +51,15 @@ codex-kanban task reset TASK_ID
 codex-kanban task open TASK_ID
 ```
 
-Without linking, use `npm run cli -- --help`. Use complete IDs returned by list commands. `--port 4318` selects another port and `--json` returns machine-readable output. Use `--file prompt.md` or `--file -` for longer input.
+Without linking, use `npm run cli -- --help`. Use complete IDs returned by list commands. `--port 4318` selects another port and `--json` returns machine-readable output. Use `--file prompt.md` or `--file -` for longer input. See [board usage](docs/usage.md) for lanes, the conversation panel, and image attachments, and the [CLI reference](docs/cli.md) for all options and exit codes.
 
 ## Configuration and data
 
 The server binds to `127.0.0.1` and uses a per-process request token for protected routes. This token is not login or user authentication. `PORT` changes the port; `CODEX_HOME` changes where Codex data is read. Kanban's layout and request records are stored under `.data/`, which is local state and is ignored by Git. Browser drafts remain in tab session storage.
 
-Codex's database, rollout files, credentials, and Desktop IPC are private implementation details. This adapter was developed against Codex Desktop `0.154.0-alpha.6.2`, with IPC state version 11 and observed follower request versions. A Desktop update may require adapter changes; these observations are not compatibility promises. See [architecture and session state](ARCHITECTURE.md) and [compatibility](docs/compatibility.md).
+Codex's database, rollout files, credentials, and Desktop IPC are private implementation details. This adapter was developed against Codex Desktop `26.908.40834` (build `8881`) and its bundled Codex CLI `0.154.0-alpha.6.2`, with IPC state version 11 and observed follower request versions. A Desktop update may require adapter changes; these observations are not compatibility promises. See [architecture and session state](ARCHITECTURE.md) and [compatibility](docs/compatibility.md).
+
+Set `KANBAN_CODEX_BIN` to the bundled Codex CLI path when the Desktop app is installed outside `/Applications`. Task creation request records live in `.data/task-requests` and survive restarts; keep them, because they provide duplicate-submission protection. See [usage](docs/usage.md) for details.
 
 ## Troubleshooting
 
@@ -70,6 +72,8 @@ Codex's database, rollout files, credentials, and Desktop IPC are private implem
 
 ## Documentation
 
+- [Board usage and configuration](docs/usage.md)
+- [CLI reference](docs/cli.md)
 - [Architecture and session state](ARCHITECTURE.md)
 - [Compatibility and support](docs/compatibility.md)
 - [Contributing](CONTRIBUTING.md)

@@ -10,7 +10,7 @@ These rankings are an assessment of the documented behavior, not a runtime evalu
 This repository presents existing Codex Desktop tasks as a local board and sends replies, steering, and stop requests to their original native owners.
 It reads Codex's SQLite state and uses the Desktop IPC socket without starting a separate Codex app-server.
 Board lanes and ordering are stored separately, while automatic placement follows published Desktop state.
-See the [local README](../../README.md#local-integration).
+See [native integration](../usage.md#native-integration).
 
 ## Relevant repositories
 
