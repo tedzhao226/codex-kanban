@@ -269,6 +269,19 @@ h1 {
   background:#252b21;
   color:#e0ebd6;
 }
+.create-project-button { background:#293324; color:#d8e8c9; border:1px solid #46583a; }
+.create-project-button:disabled { opacity:.45; cursor:not-allowed; }
+:is(#project-dialog,#task-dialog) { width:min(480px,calc(100vw - 40px)); max-height:calc(100dvh - 40px); overflow:auto; padding:26px; border:1px solid #46513e; border-radius:12px; background:#1b2019; color:#ecefea; box-shadow:0 24px 80px #0009; }
+:is(#project-dialog,#task-dialog)::backdrop { background:#0009; }
+.project-dialog-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.project-dialog-heading h2 { margin:0; font-size:22px; }
+:is(#project-dialog,#task-dialog) p { color:#aab5a1; line-height:1.6; }
+:is(#project-dialog,#task-dialog) label { display:block; margin:24px 0 9px; font-weight:600; }
+:is(#project-path,#task-project,#task-prompt) { width:100%; padding:12px; border:1px solid #46513e; border-radius:6px; background:#121610; color:#ecefea; font:inherit; }
+#task-prompt { resize:vertical; min-height:110px; }
+:is(#project-dialog,#task-dialog) .project-help { font-size:12px; margin:10px 0; }
+.project-dialog-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:26px; }
+.project-error { padding:12px; margin-top:16px; border:1px solid #66543a; border-radius:6px; color:#e5c49b; line-height:1.5; }
 .error {
   margin:18px 32px 0;
   padding:13px 16px;

@@ -6,6 +6,42 @@ Research date: 2026-09-13.
 A shared App Server is a plausible next experiment for creating tasks through the same engine as Desktop.
 It is not a demonstrated solution in this installation.
 
+Follow-up: the [shared-server experiment](shared-server-prototype.md) verified engine creation and a native WebSocket connection.
+It also found that WebSocket mode disables Desktop's IPC coordination and breaks Kanban's existing live connection.
+The investigation below describes the earlier source and read-only findings; the follow-up records the later launch experiment.
+
+## Implemented project creation route
+
+The native `codex://new?path=ABSOLUTE_FOLDER` route registers a missing project through Desktop's own `createProjectForRoot` manager, updates its cache, and selects it.
+Kanban's New Project form now creates or validates the folder, opens that route, and waits for the native project record before reporting success.
+This works with Desktop's normal stdio transport and retains Kanban's IPC connection.
+The browser flow was verified with `kanban-creation-test` under the repository's ignored `.data` directory; the native `list_projects` tool confirmed project ID `6c0d9037-6c52-42cd-a542-e18ffc349136`.
+No task was started by that check.
+
+Source: main bundle `P2e`'s `newThread` branch and `V2e`, plus `WD` in `.vite/build/window-all-closed-BxbCP6YG.js`, inside the installed app archive.
+The same route can prefill a task composer, but it does not submit its prompt, so it does not provide complete task creation inside Kanban.
+
+## Implemented task creation route
+
+A later isolated probe found that `thread/name/set` saves an empty task created with `thread/start` and `historyMode: "legacy"`.
+The setup engine can then exit before any model turn starts.
+Desktop can load that saved task through `codex://threads/<id>` and publish its normal owner/follower connection.
+Kanban sends the user's first prompt through that native owner.
+This preserves Desktop's normal transport and avoids the WebSocket regression.
+
+The production implementation is [task-creation.mjs](../../lib/task-creation.mjs), with an isolated reproduction in [probe-native-task-setup.mjs](../../scripts/probe-native-task-setup.mjs).
+The local sidebar project ID was rejected by the separate setup engine's project lookup, so setup uses the selected project's folder.
+Kanban confirms the resulting native task's project membership before sending the prompt.
+Request IDs are journaled before setup and retained across restarts; partial or uncertain results cannot automatically create another task or repeat the prompt.
+
+Native task `01a09a10-9321-7a00-820f-a790dab1088a` proved Desktop ownership, first-prompt delivery, and successful native `get_usage_limits` tool execution.
+The browser form created another task and displayed its expected reply in Kanban.
+The installed CLI created task `01a09a22-85ba-7ed3-aa61-235557b17f7f`, accepted steering and stop requests, and completed a subsequent follow-up.
+These checks used the existing `kanban-creation-test` project and did not restart Desktop.
+Native approval prompts were not forced during verification; approvals and user questions remain in Codex, as for existing Kanban conversations.
+
+The sections below preserve the earlier investigation and rejected routes.
+
 ## Verified routes
 
 | Route | Evidence | Assessment |

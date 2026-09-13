@@ -1,4 +1,5 @@
 import { renderMarkdown } from '/markdown.js';
+import { validateImages, IMAGE_TYPES, MAX_IMAGES, MAX_IMAGE_BYTES } from '/images.js';
 
 export function createChatPanel({ getToken, openNative, onSelection }) {
   const $ = selector => document.querySelector(selector);
@@ -12,11 +13,47 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
       try { drafts.set(id, JSON.parse(sessionStorage.getItem(`kanban:draft:${id}`) || 'null') || { text: '', pending: null }); }
       catch { drafts.set(id, { text: '', pending: null }); showError('The saved draft could not be read.'); }
     }
+    drafts.get(id).images ??= [];
     return drafts.get(id);
   }
   function save(id) {
-    try { sessionStorage.setItem(`kanban:draft:${id}`, JSON.stringify(draft(id))); }
+    const { text, pending, images } = draft(id);
+    try { sessionStorage.setItem(`kanban:draft:${id}`, JSON.stringify({ text, pending, images })); }
     catch { showError('Your browser could not save this draft. Keep this panel open until you send it.'); }
+  }
+  function attachments() {
+    const current = draft(task.id), container = $('#chat-images');
+    container.replaceChildren(); container.hidden = !current.images.length;
+    for (const image of current.images) {
+      const node = document.createElement('div'), preview = document.createElement('img'), name = document.createElement('span'), remove = document.createElement('button');
+      node.className = 'chat-image'; preview.src = image.dataUrl; preview.alt = image.name;
+      name.textContent = image.name; name.title = image.name; remove.textContent = '×'; remove.type = 'button'; remove.setAttribute('aria-label', `Remove ${image.name}`);
+      remove.addEventListener('click', () => { current.images = current.images.filter(value => value.id !== image.id); save(task.id); attachments(); controls(); });
+      node.append(preview, name, remove); container.append(node);
+    }
+  }
+  async function addImages(files) {
+    if (!task || !files.length) return;
+    const id = task.id, current = draft(id);
+    if (sending || current.pending || current.adding) return;
+    current.adding = true; showError(''); controls();
+    try {
+      if (files.length + current.images.length > MAX_IMAGES) throw new Error(`Attach up to ${MAX_IMAGES} images.`);
+      if (files.some(file => !IMAGE_TYPES.includes(file.type))) throw new Error('Choose a PNG, JPEG, WebP, or GIF image.');
+      if (files.reduce((total, file) => total + file.size, 0) > MAX_IMAGE_BYTES) throw new Error('Images must total 3 MB or less.');
+      const images = await Promise.all(files.map(async file => ({ id: crypto.randomUUID(), name: file.name, dataUrl: await new Promise((resolve, reject) => {
+        const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error(`Could not read ${file.name}.`)); reader.readAsDataURL(file);
+      }) })));
+      validateImages([...current.images, ...images]);
+      current.images.push(...images); save(id);
+    } catch (error) { if (task?.id === id) showError(error.message); }
+    finally { current.adding = false; if (task?.id === id) { attachments(); controls(); } }
+  }
+  function delivered(current, pending) {
+    if (current.pending?.id !== pending.id) return;
+    if (current.text === pending.text) current.text = '';
+    current.images = current.images.filter(image => !pending.imageIds?.includes(image.id));
+    current.pending = null;
   }
   async function api(id, action, body) {
     const response = await fetch(`/api/tasks/${id}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-kanban-token': getToken() }, body: JSON.stringify(body) });
@@ -26,9 +63,12 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
   }
   function controls() {
     if (!task) return;
-    const pending = draft(task.id).pending, active = view?.runtime === 'running';
+    const current = draft(task.id), pending = current.pending, active = view?.runtime === 'running';
     $('#chat-send').textContent = sending ? 'Sending…' : active ? 'Steer ↑' : 'Send ↑';
-    $('#chat-send').disabled = sending || stopping || Boolean(pending) || !input.value.trim() || !(active ? view?.canSteer : view?.canSend);
+    $('#chat-send').disabled = sending || stopping || current.adding || Boolean(pending) || (!input.value.trim() && !current.images.length) || !(active ? view?.canSteer : view?.canSend);
+    $('#chat-attach').disabled = sending || Boolean(pending) || current.adding;
+    $('#chat-attach').textContent = current.adding ? 'Reading…' : '+ Image';
+    for (const button of $('#chat-images').querySelectorAll('button')) button.disabled = sending || Boolean(pending) || current.adding;
     $('#chat-stop').hidden = !view?.canStop;
     $('#chat-stop').disabled = stopping;
     $('#chat-stop').textContent = stopping ? 'Stopping…' : '■ Stop';
@@ -51,7 +91,8 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
       } else {
         const label = document.createElement('span'), body = document.createElement('div');
         label.className = 'message-label'; label.textContent = item.kind === 'user' ? 'You' : 'Codex';
-        body.className = 'message-body'; node.append(label, body);
+        const images = document.createElement('div'); images.className = 'message-images';
+        body.className = 'message-body'; node.append(label, body, images);
       }
       entry = { node, signature: '' }; rows.set(item.id, entry);
     }
@@ -62,6 +103,12 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
         entry.node.querySelector('pre').textContent = item.detail || 'No additional output.';
       } else {
         const id = task.id;
+        const images = entry.node.querySelector('.message-images'); images.replaceChildren();
+        for (const attachment of item.images ?? []) {
+          const image = document.createElement('img'); image.alt = attachment.name; image.src = attachment.dataUrl;
+          image.addEventListener('load', () => { if (task?.id === id && followLatest && !window.getSelection()?.toString()) { timeline.scrollTop = timeline.scrollHeight; lastScrollTop = timeline.scrollTop; } });
+          images.append(image);
+        }
         renderMarkdown(entry.node.querySelector('.message-body'), item.text, { loadSvg: async path => (await api(id, 'svg', { path })).svg,
           onLayout: update => {
             update();
@@ -103,8 +150,7 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
     if (historyError) showError(historyError);
     const current = draft(task.id);
     if (current.pending && view.items.some(item => item.clientId === current.pending.id)) {
-      if (current.text === current.pending.text) { current.text = ''; input.value = ''; }
-      current.pending = null; save(task.id);
+      delivered(current, current.pending); input.value = current.text; save(task.id); attachments();
     }
     controls();
   }
@@ -149,19 +195,24 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
     $('#chat-title').textContent = task.title;
     $('#chat-empty').hidden = false; $('#chat-empty').textContent = 'Loading conversation…';
     $('#chat-earlier').hidden = true; $('#chat-latest').hidden = true;
-    panel.hidden = false; onSelection(task.id); controls(); stream(task.id, generation);
+    panel.hidden = false; onSelection(task.id); attachments(); controls(); stream(task.id, generation);
   }
+  $('#chat-attach').addEventListener('click', () => $('#chat-image-files').click());
+  $('#chat-image-files').addEventListener('change', event => { const files = [...event.target.files]; event.target.value = ''; addImages(files); });
+  input.addEventListener('paste', event => {
+    const files = [...(event.clipboardData?.files ?? [])];
+    if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); addImages(files); }
+  });
   input.addEventListener('input', () => { if (task) { draft(task.id).text = input.value; save(task.id); controls(); } });
   $('#chat-composer').addEventListener('submit', async event => {
     event.preventDefault(); if (!task || $('#chat-send').disabled) return;
     const id = task.id, round = generation, current = draft(id);
-    const pending = { id: crypto.randomUUID(), text: input.value, intent: view.runtime === 'running' ? 'steer' : 'send', expectedTurnId: view.activeTurnId };
+    const pending = { id: crypto.randomUUID(), text: input.value, imageIds: current.images.map(image => image.id), intent: view.runtime === 'running' ? 'steer' : 'send', expectedTurnId: view.activeTurnId };
     current.pending = pending; save(id); sending = true; showError(''); controls();
     try {
-      const result = await api(id, 'message', { ...pending, messageId: pending.id });
-      if (current.text === pending.text) current.text = '';
-      current.pending = null; save(id);
-      if (round === generation) { input.value = current.text; if (result.notice) showError(result.notice); }
+      const result = await api(id, 'message', { ...pending, messageId: pending.id, images: current.images.map(({ name, dataUrl }) => ({ name, dataUrl })) });
+      delivered(current, pending); save(id);
+      if (round === generation) { input.value = current.text; attachments(); if (result.notice) showError(result.notice); }
     } catch (error) {
       if (error.uncertain === false) current.pending = null;
       save(id); if (round === generation) showError(error.message);

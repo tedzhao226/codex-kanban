@@ -3,15 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A local Kanban board for existing native Codex chats.",
+  "bin": { "codex-kanban": "bin/codex-kanban.mjs" },
+  "description": "A local Kanban board and CLI for native Codex tasks.",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
+    "cli": "node bin/codex-kanban.mjs",
+    "probe:shared-server": "node scripts/probe-shared-app-server.mjs",
+    "probe:native-setup": "node scripts/probe-native-task-setup.mjs",
     "test": "node --test",
-    "check": "for file in server.mjs lib/*.mjs public/*.js scripts/*.mjs test/*.mjs; do node --check \"$file\" || exit; done",
+    "check": "for file in server.mjs bin/*.mjs lib/*.mjs public/*.js scripts/*.mjs test/*.mjs; do node --check \"$file\" || exit; done",
     "test:browser": "node scripts/verify-diagrams.mjs",
     "test:time-filter": "node scripts/verify-time-filter.mjs",
     "test:board:browser": "node scripts/verify-board.mjs"

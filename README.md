@@ -1,6 +1,7 @@
 # Codex Kanban
 
-A local Kanban board for your existing Codex desktop tasks.
+A local Kanban board and CLI for your native Codex desktop tasks.
+Create projects and start tasks directly from the board.
 Open a card to read its conversation, reply, steer an active run, or stop it.
 Messages go to the original native task, keeping its history, workspace, model, and permissions.
 
@@ -26,6 +27,16 @@ PORT=4318 npm start
 
 ## Use
 
+- Click **+ New project**, enter an absolute folder path or a path starting with `~/`, then choose **Create project**.
+  Kanban creates the folder if needed; its parent must already exist.
+  Codex registers it automatically, and the board shows the project even when it has no tasks.
+  Existing registered folders select the existing project instead of making a duplicate.
+- Click **+ New task**, select a project, enter its first prompt, and choose **Create task**.
+  The task uses the project's existing folder and opens its conversation inside Kanban.
+  Codex loads the native task in the background; creation requires no extra step in its window.
+  This version supports local project folders; it does not create worktrees or cloud tasks.
+  If creation is interrupted, **Check creation** checks the same request without repeating its first prompt.
+  Use **View task** when a task ID was returned but setup or delivery failed.
 - Filter by project, search task titles and previews, or use **Updated** to show the last day, last 3 days, last week, or all time.
   Time ranges use the last update shown on each card, and the browser remembers your time filter after reload.
 - Drag a card between lanes or use its lane menu.
@@ -36,7 +47,10 @@ PORT=4318 npm start
 - Read the newest 50 messages and activities, then use **Load earlier** for another 50.
 - Send a reply when idle, **Steer** the current run, or **Stop** it.
 - Press Cmd/Ctrl+Enter to send; drafts survive panel switches and reloads in the same browser tab.
-- Use **Open in Codex** for native tools, approvals, questions, attachments, and file review.
+- Choose **+ Image** or paste a screenshot into the composer; preview or remove images before sending or steering.
+  Image-only messages are supported, with up to four PNG, JPEG, WebP, or GIF images totaling 3 MB per message.
+  Image drafts stay with the text draft; if browser storage fills up, the panel warns you to keep the page open.
+- Use **Open in Codex** for native tools, approvals, answering questions, other attachment types, and file review.
 
 Automatic lanes use published desktop status: active tasks go to Running, approval requests and errors go to Needs input, and idle tasks go to Review.
 Tasks without a live snapshot start in Backlog.
@@ -55,7 +69,9 @@ The panel renders a local view of the native conversation; it does not embed the
 Markdown and code blocks are supported, and tool activity is collapsed.
 Mermaid and SVG code blocks render as diagrams, with a **Source** disclosure below each preview.
 Standalone SVG markup and Markdown links or images pointing to `.svg` files in the task's workspace also show previews.
-Other images and attachments remain placeholders linking the workflow back to Codex.
+Images sent from Kanban appear inline in the conversation.
+Historical local-file images, remote images, and other attachments remain placeholders linking the workflow back to Codex.
+Recorded question replies show the question and answer without Codex's internal transport markup.
 SVG previews are static images with scripts, embedded HTML, animation, and external image references removed.
 Other raw HTML and non-HTTP links are disabled.
 Invalid or incomplete diagrams show an error with their source and update when the message changes.
@@ -71,12 +87,18 @@ Steering a finished or changed run fails explicitly instead of starting another 
 
 The server reads `~/.codex/state_5.sqlite` in SQLite read-only mode and reads project metadata from `.codex-global-state.json`.
 It subscribes to the desktop app’s existing `~/.codex/ipc/ipc.sock` for runtime snapshots.
-Only tasks with an open conversation panel retain full native snapshots and selected saved rollout history in memory.
+Open conversation panels and temporary CLI operations retain full native snapshots and selected saved rollout history in memory.
 The saved transcript reader includes user messages, assistant messages, and tool summaries; it excludes injected instructions and internal reasoning.
-Closing the last panel for a task releases its transcript cache.
+Releasing the last subscription for a task releases its transcript cache.
 
 The adapter discovers the original task owner and uses native follower requests for complete history, starting a reply, steering, and interruption.
-It does not create another session, launch a separate app server, or modify Codex’s database or rollout files directly.
+Project creation uses Codex's native `codex://new?path=…` entry point and waits for its project metadata to confirm registration.
+Codex must be running normally; the board does not need the experimental shared-server launch.
+Task creation briefly starts the bundled App Server to create and name an empty native task, then closes that setup process.
+Naming saves the empty history without a model turn.
+The server opens the task in Desktop, confirms its project membership, and sends the first prompt through its native owner.
+Execution continues in Desktop using the same follower requests as existing tasks.
+Kanban never edits Codex's database or rollout files directly.
 Approval and question handling remains in Codex.
 The browser receives normalized transcript items rather than raw native state.
 
@@ -84,6 +106,9 @@ The database schema and desktop IPC are private implementation details, not a pu
 This adapter targets IPC state version 11 and follower request versions observed with the installed app’s bundled Codex `0.154.0-alpha.6.2`.
 A future desktop update may require adapter changes.
 Connection failures and protocol mismatches are shown on the board.
+Set `KANBAN_CODEX_BIN` on the server to override the bundled CLI path when the application is installed elsewhere.
+Task creation request records live in `.data/task-requests` and survive server restarts.
+Keep these records to retain duplicate-submission protection; an uncertain request is never automatically recreated.
 
 Native opening uses macOS `open` with `codex://threads/<task-id>`.
 Board lanes, card order, and layout revisions are stored separately in `.data/board.sqlite`, excluded from Git together with its WAL sidecar files.
@@ -124,7 +149,54 @@ Browser streams reconnect after interruptions; unconfirmed message submissions a
 Drafts are stored per task in the tab’s `sessionStorage`.
 Keep it local: it can read conversations and send messages through your signed-in desktop app.
 
+## CLI
+
+The CLI source lives in this repository: `bin/codex-kanban.mjs` is the entry point and `lib/cli.mjs` contains its implementation.
+The global command installed by `npm link` points back to these files.
+The `codex-kanban` skill shares usage through Skills Manager's `code-core` profile; its personal authoring source is `~/workspace/agent-system/skills/personal/codex-kanban`.
+
+Install the workspace command once, then keep the Kanban server running:
+
+```sh
+npm link
+codex-kanban --help
+codex-kanban project list
+codex-kanban project create ~/workspace/example
+codex-kanban task list --project PROJECT_ID --json
+codex-kanban task create --project PROJECT_ID --prompt "Describe the work"
+codex-kanban task show TASK_ID --follow
+codex-kanban task send TASK_ID --text "Continue with the tests"
+codex-kanban task steer TASK_ID --text "Focus on the API first"
+codex-kanban task stop TASK_ID
+codex-kanban task move TASK_ID done
+codex-kanban task reset TASK_ID
+codex-kanban task open TASK_ID
+```
+
+Without installation, use `npm run cli -- task list` from this repository.
+Use complete IDs from the list commands; task names are not mutation targets.
+Options follow the command: `--port 4318` selects another loopback port, and `--json` returns machine-readable output.
+Use `--file prompt.md` or `--file -` instead of `--prompt` or `--text` for file or stdin input.
+Task listing supports `--project`, `--column`, and `--search`; history supports `--limit 1..10000`.
+`--follow --json` emits one conversation snapshot per line until Ctrl+C.
+`task move` optionally accepts `--before TASK_ID` to position a card.
+Moving or resetting a card changes the board; stopping execution requires `task stop`.
+
+The CLI acquires the local request token internally and excludes it from output.
+It loads native conversations for send, steer, and stop without needing a browser tab.
+If an older task has no native owner, use `task open` to load it in Codex before sending.
+Commands report errors on stderr and never automatically retry mutations.
+Exit codes are `0` for success, `1` for other errors, `2` for invalid input, `3` for unavailable services, `4` for conflicts, and `5` for uncertain delivery.
+Creation and message errors include their request ID; `--request-id UUID` identifies a repeat of the exact same submission.
+After uncertain task creation, reuse its request ID and original input to check the saved result, or inspect the returned task ID before starting another task.
+
 ## Verify
+
+Run `npm run probe:native-setup` to verify that the installed engine can save an empty native task without a model turn.
+It uses a temporary Codex home and no account credentials.
+
+The [shared-server creation experiment](docs/research/shared-server-prototype.md) tests project and task creation with two clients in a temporary Codex home.
+Run it separately with `npm run probe:shared-server`; it does not connect the board or Desktop to that server.
 
 ```sh
 npm run check
@@ -138,6 +210,7 @@ npm run test:browser
 npm run test:time-filter
 npm run test:board:browser
 node scripts/verify-status-sync.mjs
+node scripts/verify-chat-input.mjs
 ```
 
 Tests cover SQLite migration, concurrent layout edits, revision conflicts, rollback and worker lifecycle, task discovery, IPC updates and revision recovery, transcript filtering and pagination, native reply/steer/stop routing, duplicate submission handling, and HTTP/SSE boundaries.

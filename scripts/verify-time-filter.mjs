@@ -19,8 +19,9 @@ const tasks = ages.map((age, index) => ({
 }));
 const feed = Object.assign(new EventEmitter(), { states: new Map([[tasks[0].id, { threadRuntimeStatus: { type: 'active' } }]]),
   conversations: new Map(), connected: true, protocolOK: true, message: 'Connected to Codex', sync() {}, close() {} });
-const app = createApp({ index: { list: () => tasks, close() {} }, feed, store: await BoardStore.open(join(directory, 'board.sqlite')),
-  openThread: async () => { throw new Error('Native actions are disabled in this fixture.'); } });
+const app = createApp({ index: { projects: () => [], list: () => tasks, close() {} }, feed, store: await BoardStore.open(join(directory, 'board.sqlite')),
+  openThread: async () => { throw new Error('Native actions are disabled in this fixture.'); },
+  openProject: async () => { throw new Error('Native actions are disabled in this fixture.'); } });
 app.server.listen(0, '127.0.0.1');
 await once(app.server, 'listening');
 

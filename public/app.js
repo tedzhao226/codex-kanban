@@ -37,12 +37,13 @@ function toast(message, failure = false) {
 async function request(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-kanban-token': state.token }, body: JSON.stringify(body) });
   const data = await response.json();
-  if (!response.ok) throw Object.assign(new Error(data.error || `Request failed (${response.status}).`), { status: response.status, uncertain: data.uncertain });
+  if (!response.ok) throw Object.assign(new Error(data.error || `Request failed (${response.status}).`), { status: response.status, uncertain: data.uncertain, threadId: data.threadId });
   return data;
 }
 
 function renderProjects(tasks) {
-  const projects = new Map(state.tasks.map(task => [task.projectId, { name: task.projectName, count: 0 }]));
+  const projects = new Map(state.projects.map(item => [item.id, { name: item.name, count: 0 }]));
+  for (const task of state.tasks) if (!projects.has(task.projectId)) projects.set(task.projectId, { name: task.projectName, count: 0 });
   for (const task of tasks) projects.get(task.projectId).count++;
   if (project && !projects.has(project)) project = '';
   const choices = [['', { name: 'All projects', count: tasks.length }], ...[...projects].sort((a, b) => a[1].name.localeCompare(b[1].name))];
@@ -119,7 +120,7 @@ function render(force = false) {
   renderDeferred = false;
   const cutoff = days ? Date.now() - days * 86400000 : -Infinity;
   const recent = state.tasks.filter(task => task.updatedAt >= cutoff);
-  const next = JSON.stringify([state.tasks, state.connection, project, search, days, recent.map(task => task.id), [...pendingCards]]);
+  const next = JSON.stringify([state.tasks, state.projects, state.connection, project, search, days, recent.map(task => task.id), [...pendingCards]]);
   if (!force && signature === next) return;
   signature = next;
   renderProjects(recent);
@@ -128,6 +129,8 @@ function render(force = false) {
   $('#summary').textContent = `${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} · ${running} running`;
   const connection = $('#connection');
   const healthy = state.connection.connected && state.connection.message === 'Connected to Codex';
+  $('#new-project').disabled = !healthy;
+  $('#new-task').disabled = !healthy;
   connection.textContent = healthy ? 'Codex connected' : 'Live status offline';
   connection.classList.toggle('offline', !healthy);
   connection.title = state.connection.message;
@@ -215,6 +218,121 @@ $('#time-filter').addEventListener('change', event => {
   catch { toast('Your browser could not save the time filter. It will reset after reload.', true); }
 });
 $('#refresh').addEventListener('click', () => { signature = ''; refresh(); });
+$('#new-project').addEventListener('click', () => {
+  $('#project-error').hidden = true;
+  $('#project-dialog').showModal();
+});
+for (const id of ['#project-cancel', '#project-close']) $(id).addEventListener('click', () => $('#project-dialog').close());
+$('#project-dialog').addEventListener('cancel', event => { if ($('#project-submit').disabled) event.preventDefault(); });
+$('#project-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = $('#project-submit');
+  if (submit.disabled) return;
+  submit.disabled = true;
+  $('#project-cancel').disabled = $('#project-close').disabled = true;
+  submit.textContent = 'Creating…';
+  $('#project-error').hidden = true;
+  $('#project-path').readOnly = true;
+  try {
+    const result = await request('/api/projects', { path: $('#project-path').value });
+    const sequence = ++requestSequence;
+    const updated = await request('/api/board');
+    project = result.project.id;
+    acceptSnapshot(updated, sequence);
+    if ($('#task-dialog').open) taskProjects(result.project.id);
+    $('#project-dialog').close();
+    $('#project-form').reset();
+    toast(result.existing ? 'Selected existing project' : 'Project created');
+  } catch (error) {
+    $('#project-error').textContent = error.message;
+    $('#project-error').hidden = false;
+  } finally {
+    submit.disabled = false;
+    $('#project-cancel').disabled = $('#project-close').disabled = false;
+    submit.textContent = 'Create project';
+    $('#project-path').readOnly = false;
+  }
+});
+let taskSubmission = null, savedTaskId = null;
+function taskProjects(selected = project) {
+  $('#task-project').replaceChildren(element('option', '', 'Select a project'), ...state.projects.map(item => {
+    const option = element('option', '', item.name); option.value = item.id; return option;
+  }));
+  $('#task-project').firstChild.value = '';
+  $('#task-project').value = state.projects.some(item => item.id === selected) ? selected : '';
+}
+function taskLocked(locked) {
+  $('#task-project').disabled = $('#task-new-project').disabled = locked;
+  $('#task-prompt').readOnly = locked;
+}
+$('#new-task').addEventListener('click', () => {
+  try {
+    taskSubmission = JSON.parse(sessionStorage.getItem('kanban:new-task') ?? 'null');
+    if (taskSubmission && (typeof taskSubmission.requestId !== 'string' || typeof taskSubmission.prompt !== 'string' || typeof taskSubmission.projectId !== 'string')) throw new Error('The saved task form is invalid. Clear its browser session storage to continue.');
+    taskProjects(taskSubmission?.projectId ?? project);
+    if (taskSubmission) $('#task-prompt').value = taskSubmission.prompt;
+    taskLocked(Boolean(taskSubmission));
+    $('#task-submit').textContent = taskSubmission ? 'Check creation' : 'Create task';
+    $('#task-error').hidden = !taskSubmission;
+    $('#task-error').textContent = 'Creation was not confirmed. Check its result before starting another task.';
+    $('#task-clear').hidden = !taskSubmission;
+    $('#task-dialog').showModal();
+  } catch (error) { toast(error.message, true); }
+});
+$('#task-new-project').addEventListener('click', () => $('#new-project').click());
+for (const id of ['#task-cancel', '#task-close']) $(id).addEventListener('click', () => $('#task-dialog').close());
+$('#task-dialog').addEventListener('cancel', event => { if ($('#task-submit').disabled) event.preventDefault(); });
+$('#task-clear').addEventListener('click', () => {
+  try { sessionStorage.removeItem('kanban:new-task'); }
+  catch (error) { toast(error.message, true); return; }
+  taskSubmission = null; savedTaskId = null; taskLocked(false);
+  $('#task-prompt').value = '';
+  $('#task-error').hidden = $('#task-recover').hidden = $('#task-clear').hidden = true;
+  $('#task-submit').textContent = 'Create task';
+});
+$('#task-recover').addEventListener('click', async () => {
+  await refresh(true);
+  const task = state.tasks.find(task => task.id === savedTaskId);
+  if (task) { $('#task-dialog').close(); chat.open(task); }
+  else toast('The saved task is not visible yet. Refresh the board to check again.', true);
+});
+$('#task-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = $('#task-submit');
+  if (submit.disabled) return;
+  submit.disabled = $('#task-cancel').disabled = $('#task-close').disabled = $('#task-clear').disabled = true;
+  $('#task-error').hidden = $('#task-recover').hidden = true;
+  submit.textContent = 'Creating…';
+  let sent = false;
+  try {
+    taskSubmission ??= { requestId: crypto.randomUUID(), projectId: $('#task-project').value, prompt: $('#task-prompt').value };
+    sessionStorage.setItem('kanban:new-task', JSON.stringify(taskSubmission));
+    taskLocked(true); sent = true;
+    const result = await request('/api/tasks', taskSubmission);
+    const sequence = ++requestSequence;
+    const updated = await request('/api/board');
+    project = result.task.projectId; search = ''; $('#search').value = '';
+    acceptSnapshot(updated, sequence);
+    sessionStorage.removeItem('kanban:new-task'); taskSubmission = null;
+    $('#task-dialog').close(); $('#task-form').reset();
+    chat.open(result.task); toast('Task created');
+  } catch (error) {
+    savedTaskId = error.threadId ?? null;
+    const knownFailure = !sent || (error.status && !error.uncertain && !savedTaskId && error.status < 500);
+    if (knownFailure) {
+      try { sessionStorage.removeItem('kanban:new-task'); taskSubmission = null; }
+      catch (storageError) { error.message += ' ' + storageError.message; }
+    }
+    $('#task-error').textContent = error.message + (savedTaskId ? ' Check this task’s conversation before sending the prompt again.' : knownFailure ? '' : ' Check creation before starting another task.');
+    $('#task-error').hidden = false;
+    $('#task-recover').hidden = !savedTaskId;
+  } finally {
+    taskLocked(Boolean(taskSubmission));
+    submit.disabled = $('#task-cancel').disabled = $('#task-close').disabled = $('#task-clear').disabled = false;
+    submit.textContent = taskSubmission ? 'Check creation' : 'Create task';
+    $('#task-clear').hidden = !taskSubmission;
+  }
+});
 document.addEventListener('keydown', event => {
   if (event.key === '/' && !event.metaKey && !event.ctrlKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) { event.preventDefault(); $('#search').focus(); }
 });
