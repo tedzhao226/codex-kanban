@@ -15,7 +15,7 @@ The investigation below describes the earlier source and read-only findings; the
 The native `codex://new?path=ABSOLUTE_FOLDER` route registers a missing project through Desktop's own `createProjectForRoot` manager, updates its cache, and selects it.
 Kanban's New Project form now creates or validates the folder, opens that route, and waits for the native project record before reporting success.
 This works with Desktop's normal stdio transport and retains Kanban's IPC connection.
-The browser flow was verified with `kanban-creation-test` under the repository's ignored `.data` directory; the native `list_projects` tool confirmed project ID `6c0d9037-6c52-42cd-a542-e18ffc349136`.
+The browser flow was verified with a temporary project under the repository's ignored `.data` directory; the native project listing confirmed its project ID.
 No task was started by that check.
 
 Source: main bundle `P2e`'s `newThread` branch and `V2e`, plus `WD` in `.vite/build/window-all-closed-BxbCP6YG.js`, inside the installed app archive.
@@ -34,9 +34,9 @@ The local sidebar project ID was rejected by the separate setup engine's project
 Kanban confirms the resulting native task's project membership before sending the prompt.
 Request IDs are journaled before setup and retained across restarts; partial or uncertain results cannot automatically create another task or repeat the prompt.
 
-Native task `01a09a10-9321-7a00-820f-a790dab1088a` proved Desktop ownership, first-prompt delivery, and successful native `get_usage_limits` tool execution.
+An isolated native task proved Desktop ownership, first-prompt delivery, and successful native `get_usage_limits` tool execution.
 The browser form created another task and displayed its expected reply in Kanban.
-The installed CLI created task `01a09a22-85ba-7ed3-aa61-235557b17f7f`, accepted steering and stop requests, and completed a subsequent follow-up.
+The installed CLI created an isolated task, accepted steering and stop requests, and completed a subsequent follow-up.
 These checks used the existing `kanban-creation-test` project and did not restart Desktop.
 Native approval prompts were not forced during verification; approvals and user questions remain in Codex, as for existing Kanban conversations.
 
@@ -60,13 +60,13 @@ The shared IPC broker finds a connected client that advertises a request handler
 Desktop's conversation registration contains owner discovery and follower operations without a generic App Server forwarder.
 The live owner-discovery response for the active task included `supportsUntrustedAppInput: true`; the two general read-only API requests returned `resultType: "error"`, `error: "no-client-found"`.
 This confirms missing routing on the existing connection, not an inherent limitation of IPC.
-Source: `.vite/build/src-CCXHtyvY.js`, `handleRequest`, `findClientForRequest`, `handleClientDiscoveryRequest`, and `y9`, inside the [installed app archive](/Applications/ChatGPT.app/Contents/Resources/app.asar).
+Source: the installed Desktop app's generated bundle, including `handleRequest`, `findClientForRequest`, `handleClientDiscoveryRequest`, and `y9`.
 
 The separate app-tools pipe starts at launch with a random socket path published as `CODEX_APP_TOOLS_PIPE_PATH`.
 It dispatches `tools/list` and `tools/call` through a ready app window, with caller thread/turn context.
 This production macOS build checks the socket peer's code-signing identity before accepting requests.
-The plain Node probe closed without a tool response; the [Desktop log](/Users/ted/Library/Logs/com.openai.codex/2026/09/13/codex-desktop-9acbceec-8304-4be3-9b6f-7840d55ed515-88886-t0-i1-000117-0.log) records repeated `dynamic_app_tools_peer_rejected reason=missing-code-signing-identity`, including 04:45:00.536 UTC.
-Source: main bundle `Dl` and `Tse`, launch setup, and [native authorization module](/Applications/ChatGPT.app/Contents/Resources/native/browser-use-peer-authorization.node).
+The plain Node probe closed without a tool response; a local Desktop log recorded repeated `dynamic_app_tools_peer_rejected reason=missing-code-signing-identity` events during the 2026-09-13 investigation.
+Source: the installed Desktop app's main bundle, launch setup, and native authorization module.
 The exact native allowlist was not reconstructed, and authorization was not changed or bypassed.
 
 ## Project creation capability and Desktop synchronization
@@ -74,7 +74,7 @@ The exact native allowlist was not reconstructed, and authorization was not chan
 The Desktop `create_project` tool validates source folders against the caller's workspace roots and calls native `projects.createLocal`.
 It is included only when `projectToolsEnabled` is true and is absent from this investigation's available tool catalog.
 The native manager can create a default workspace folder, writes the project through its backend, updates ordering and selection, and broadcasts state changes.
-Source: `webview/assets/app-initial-9b95fa538c62.js` symbols `t7n`, `FYr`, and `qQo`, plus main bundle `ProjectsManager.createLocal`, in the [app archive](/Applications/ChatGPT.app/Contents/Resources/app.asar).
+Source: the installed Desktop app's webview and main bundle, including `ProjectsManager.createLocal`.
 
 Desktop always installs the App Server project backend around a legacy global-state cache.
 The backend uses server project operations when the connected engine satisfies the `projects` version capability, whose minimum is `0.148.0-alpha.21`; otherwise it writes the legacy cache alone.
@@ -88,7 +88,7 @@ Schema generation from the installed CLI confirms experimental `project/list`, `
 `project/create` requires `idempotencyKey`, `name`, and `roots: [{path}]`, with optional metadata.
 `thread/start.projectId` persists the project assignment for durable tasks.
 Stable generation excludes the project methods and that field.
-Sources: generated [project parameters](/private/tmp/codex-kanban-native-creation-schema-20260913/v2/ProjectCreateParams.json), [task parameters](/private/tmp/codex-kanban-native-creation-schema-20260913/v2/ThreadStartParams.json), and [stable requests](/private/tmp/codex-kanban-native-creation-schema-stable-20260913/ClientRequest.json).
+Sources: generated project and task parameter schemas and stable request fixtures from the dated investigation (kept outside the repository).
 Temporary schema files are investigation outputs, not repository dependencies.
 
 Public documentation describes App Server transports, task creation, version-specific schema generation, and experimental API opt-in; its API overview does not document these project methods.
@@ -118,8 +118,8 @@ Inspected app: version `26.908.40834`, build `8881`, production flavor; bundled 
 Source: app archive `package.json` and CLI version output.
 
 ```sh
-/Applications/ChatGPT.app/Contents/Resources/codex app-server generate-json-schema --experimental --out /private/tmp/codex-kanban-native-creation-schema-20260913
-/Applications/ChatGPT.app/Contents/Resources/codex app-server generate-json-schema --out /private/tmp/codex-kanban-native-creation-schema-stable-20260913
+path/to/codex app-server generate-json-schema --experimental --out ./generated-schemas/experimental
+path/to/codex app-server generate-json-schema --out ./generated-schemas/stable
 ```
 
 Useful byte offsets in `.vite/build/src-CCXHtyvY.js`: handler discovery 1553412, owner/follower registration 1559611, WebSocket override 897201, daemon opt-in 932468.
@@ -129,4 +129,4 @@ These implementation details are specific to this installed build.
 
 Investigation used source inspection, schema generation, read-only socket requests, and targeted logs.
 No mutation API was called, no task or project was created, no app configuration was changed, and no App Server or Desktop process was started or restarted.
-The live Markdown rule at `/Users/ted/.codex/rules/markdown.md` was missing; authoring used `/Users/ted/workspace/agent-system/backups/codex/rules/markdown.md`.
+The live Markdown rule was unavailable during this dated research pass; authoring used a local backup.

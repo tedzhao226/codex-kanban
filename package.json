@@ -5,6 +5,18 @@
   "type": "module",
   "bin": { "codex-kanban": "bin/codex-kanban.mjs" },
   "description": "A local Kanban board and CLI for native Codex tasks.",
+  "files": [
+    "ARCHITECTURE.md",
+    "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "docs/**",
+    "bin/**",
+    "lib/**",
+    "public/**",
+    "scripts/check-syntax.mjs",
+    "server.mjs"
+  ],
   "engines": {
     "node": ">=24"
   },
@@ -15,7 +27,7 @@
     "probe:shared-server": "node scripts/probe-shared-app-server.mjs",
     "probe:native-setup": "node scripts/probe-native-task-setup.mjs",
     "test": "node --test",
-    "check": "for file in server.mjs bin/*.mjs lib/*.mjs public/*.js scripts/*.mjs test/*.mjs; do node --check \"$file\" || exit; done",
+    "check": "node scripts/check-syntax.mjs",
     "test:browser": "node scripts/verify-diagrams.mjs",
     "test:time-filter": "node scripts/verify-time-filter.mjs",
     "test:board:browser": "node scripts/verify-board.mjs"
