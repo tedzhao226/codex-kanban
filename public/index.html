@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Codex Kanban</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Codex Kanban home"><img src="/favicon.svg" width="30" height="30" alt=""><span>Codex<span class="brand-sub">KANBAN</span></span></a>
+    <div class="sidebar-label">WORKSPACE</div>
+    <nav id="projects" aria-label="Filter by project"></nav>
+    <div class="sidebar-bottom"><span class="local-dot"></span><div>On your Mac<small>Board changes stay local</small></div></div>
+  </aside>
+  <main>
+    <header>
+      <div class="eyebrow">YOUR NATIVE CODEX TASKS</div>
+      <div class="heading-row"><h1 id="heading">Task board</h1><span id="connection" class="connection">Connecting…</span></div>
+      <p class="subtitle">A place for every task. The full conversation stays in Codex.</p>
+      <div class="toolbar">
+        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search tasks…" aria-label="Search tasks" autocomplete="off"><kbd>/</kbd></label>
+        <span id="summary" class="summary">Loading tasks…</span>
+        <button id="refresh" class="quiet-button" type="button">↻ <span>Refresh</span></button>
+      </div>
+    </header>
+    <div id="error" class="error" role="alert" hidden></div>
+    <div class="board-wrap"><div id="board" class="board" aria-label="Task board" aria-busy="true"><div class="loading">Connecting to your task library…</div></div></div>
+    <footer><span>Drag to organize · Use a card’s lane menu for keyboard access</span><span id="sync-time">Local library</span></footer>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

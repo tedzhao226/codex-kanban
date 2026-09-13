@@ -1,0 +1,14 @@
+{
+  "name": "codex-kanban",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local Kanban board for existing native Codex chats.",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test",
+    "check": "node --check server.mjs && node --check public/app.js"
+  }
+}
