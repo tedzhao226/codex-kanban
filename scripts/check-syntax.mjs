@@ -3,17 +3,23 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 
 const roots = [
-  ['.', ['server.mjs']],
-  ['bin', ['.mjs']],
-  ['lib', ['.mjs']],
-  ['public', ['.js']],
-  ['scripts', ['.mjs']],
-  ['test', ['.mjs']],
+  ['.', ['server.mjs'], false],
+  ['bin', ['.mjs'], false],
+  ['lib', ['.mjs'], false],
+  ['public', ['.js'], false],
+  ['scripts', ['.mjs'], false],
+  ['test', ['.mjs'], true],
 ];
 
 const files = [];
-for (const [directory, suffixes] of roots) {
-  const names = await readdir(directory, { withFileTypes: true });
+for (const [directory, suffixes, optional] of roots) {
+  let names;
+  try {
+    names = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (optional && error.code === 'ENOENT') continue;
+    throw error;
+  }
   for (const entry of names) {
     if (entry.isFile() && suffixes.some((suffix) => entry.name === suffix || entry.name.endsWith(suffix))) {
       files.push(join(directory, entry.name));

@@ -3,6 +3,8 @@ node_modules/
 .DS_Store
 *.log
 .multica/
+.devin/
+.kiro/
 AGENTS.md
 .env
 .env.*

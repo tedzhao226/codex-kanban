@@ -97,7 +97,8 @@ No persistent app setting or app binary needs changing.
 After Desktop has quit, start the shared server in one terminal:
 
 ```sh
-CODEX_APP_SERVER_BIN=path/to/codex app-server --listen ws://127.0.0.1:4319
+CODEX_APP_SERVER_BIN="path/to/codex"
+"$CODEX_APP_SERVER_BIN" app-server --listen ws://127.0.0.1:4319
 ```
 
 Then launch Desktop from another terminal:
