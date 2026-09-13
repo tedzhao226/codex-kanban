@@ -2,7 +2,7 @@ import DOMPurify from '/vendor/purify.js';
 
 let mermaidPromise, sequence = 0;
 
-export function svgImage(source, label) {
+function svgImage(source, label) {
   if (source.length > 1024 * 1024) throw new Error('SVG previews must be 1 MB or smaller.');
   const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
   if (parsed.querySelector('parsererror') || parsed.documentElement.localName !== 'svg') throw new Error('This is not a complete, valid SVG.');
@@ -19,7 +19,7 @@ export function svgImage(source, label) {
   return image;
 }
 
-export async function mermaidSvg(source) {
+async function mermaidSvg(source) {
   if (source.length > 50000) throw new Error('Mermaid previews must be 50,000 characters or smaller.');
   mermaidPromise ??= import('/vendor/mermaid/mermaid.esm.min.mjs').then(({ default: mermaid }) => {
     mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, theme: 'dark',

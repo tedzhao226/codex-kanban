@@ -25,7 +25,7 @@ test('task library includes native tasks with an unset legacy user-event flag an
   const before = readFileSync(path);
   const index = new TaskIndex(directory);
   const tasks = index.list();
-  index.close();
+  t.after(() => index.close());
   assert.equal(tasks.length, 3);
   assert.equal(tasks.find(task => task.id === 'worktree').projectId, 'repo');
   assert.equal(tasks.find(task => task.id === 'projectless').projectName, 'No project');
@@ -34,4 +34,12 @@ test('task library includes native tasks with an unset legacy user-event flag an
   assert.equal(tasks[0].updatedAt, 20000);
   assert.equal(tasks[0].pinned, true);
   assert.deepEqual(readFileSync(path), before);
+  const writer = new DatabaseSync(path);
+  try {
+    writer.exec("UPDATE threads SET name = 'Renamed in Codex', updated_at_ms = 30000 WHERE id = 'one'; UPDATE threads SET archived = 1 WHERE id = 'projectless';");
+  } finally { writer.close(); }
+  const refreshed = index.list();
+  assert.equal(refreshed.find(task => task.id === 'one').title, 'Renamed in Codex');
+  assert.equal(refreshed.find(task => task.id === 'one').updatedAt, 30000);
+  assert.equal(refreshed.some(task => task.id === 'projectless'), false);
 });

@@ -139,7 +139,7 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
   function close() {
     const id = task?.id;
     generation++; controller?.abort(); clearTimeout(reconnect);
-    task = null; view = null; panel.hidden = true; document.body.classList.remove('chat-open'); onSelection(null);
+    task = null; view = null; panel.hidden = true; onSelection(null);
     if (id) document.querySelector(`[data-id="${id}"] .card-title`)?.focus();
   }
   function open(selected) {
@@ -149,7 +149,7 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
     $('#chat-title').textContent = task.title;
     $('#chat-empty').hidden = false; $('#chat-empty').textContent = 'Loading conversation…';
     $('#chat-earlier').hidden = true; $('#chat-latest').hidden = true;
-    panel.hidden = false; document.body.classList.add('chat-open'); onSelection(task.id); controls(); stream(task.id, generation);
+    panel.hidden = false; onSelection(task.id); controls(); stream(task.id, generation);
   }
   input.addEventListener('input', () => { if (task) { draft(task.id).text = input.value; save(task.id); controls(); } });
   $('#chat-composer').addEventListener('submit', async event => {
@@ -197,5 +197,5 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
   $('#chat-resize').addEventListener('pointermove', event => { if (resizing) width(innerWidth - event.clientX); });
   $('#chat-resize').addEventListener('pointerup', () => { resizing = false; });
   $('#chat-resize').addEventListener('keydown', event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); width(panel.getBoundingClientRect().width + (event.key === 'ArrowLeft' ? 40 : -40)); } });
-  return { open, close, selectedId: () => task?.id ?? null };
+  return { open, selectedId: () => task?.id ?? null };
 }

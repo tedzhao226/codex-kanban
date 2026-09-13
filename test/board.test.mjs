@@ -84,6 +84,28 @@ test('a resumed task releases saved manual placement after server restart', asyn
   assert.equal(board.tasks.find(task => task.id === b).manual, false);
 });
 
+test('a run that finishes during a SQLite lock still releases manual Done on retry', async t => {
+  const f = fixture(t), store = await f.open();
+  await store.move(b, 'done', null, tasks, 0);
+  const lock = new DatabaseSync(f.path);
+  lock.exec('BEGIN IMMEDIATE');
+  try {
+    await assert.rejects(store.arrange(tasks.map(task => task.id === b ? { ...task, runtime: 'running' } : task)), { status: 503 });
+  } finally { lock.exec('ROLLBACK'); lock.close(); }
+  const board = await store.arrange(tasks);
+  const card = board.tasks.find(task => task.id === b);
+  assert.equal(card.column, 'review');
+  assert.equal(card.manual, false);
+  assert.equal(card.layoutRevision, 2);
+  assert.equal(board.boardRevision, 2);
+  const db = new DatabaseSync(f.path, { readOnly: true });
+  try { assert.equal(db.prepare('SELECT manual_lane FROM card_state WHERE thread_id = ?').get(b).manual_lane, null); }
+  finally { db.close(); }
+  await store.close();
+  const restarted = await f.open();
+  assert.deepEqual(await restarted.arrange(tasks), board);
+});
+
 test('reordering an automatic card keeps it following Codex status', async t => {
   const store = await fixture(t).open();
   const moved = await store.move(b, 'review', null, tasks, 0);

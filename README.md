@@ -91,6 +91,8 @@ A persistent worker owns the SQLite connection, keeping board reads, writes, and
 The supported setup is one local server with multiple browser tabs or API clients on the same Mac.
 Different cards can be edited concurrently; moving a card from a stale view returns a conflict and refreshes that editor without retrying the move.
 Codex status changes and card moves notify all open boards immediately, with a four-second refresh for reconciliation.
+Native task metadata is reread every five seconds; changes notify open boards even when Codex sends no runtime event.
+If SQLite is temporarily locked, status synchronization reports the failure and retries on refresh, preserving observed activity even if the run finishes before the write succeeds.
 Visible board replacement waits until an active drag or lane-selector interaction ends; runtime badges continue updating during the interaction.
 
 On first startup, the server imports the existing `board.json` transactionally and archives it as `board.json.bak`.

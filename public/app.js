@@ -77,7 +77,6 @@ function card(task) {
   top.append(element('span', 'card-project', task.projectName), when);
   const title = element('button', 'card-title', task.title);
   title.type = 'button';
-  title.dataset.action = 'chat';
   title.title = task.title;
   title.setAttribute('aria-label', `View conversation: ${task.title}`);
   node.append(top, title);

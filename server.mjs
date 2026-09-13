@@ -30,10 +30,8 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
   const refresh = () => {
     try { threads = index.list(); feed.sync(threads.map(thread => thread.id)); indexError = null; }
     catch (error) { indexError = error.message; }
+    syncBoard();
   };
-  refresh();
-  const timer = setInterval(refresh, 5000);
-  timer.unref();
   const nativeTasks = () => threads.map(thread => ({ ...thread, runtime: runtimeLabel(feed.states.get(thread.id)) }));
   const boardResponse = board => ({ ...board, columns: COLUMNS, connection: { connected: feed.connected, message: feed.message }, token, refreshedAt: Date.now() });
   async function snapshot() {
@@ -41,23 +39,28 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
     return boardResponse(await store.arrange(nativeTasks()));
   }
   function scheduleBoardUpdate() {
-    if (boardUpdate || closing) return;
+    if (!boardStreams.size || boardUpdate || closing) return;
     boardUpdate = setTimeout(() => {
       boardUpdate = null;
       for (const stream of boardStreams) stream.write('data: {}\n\n');
     }, 150);
   }
-  const onFeedChange = () => {
+  function syncBoard() {
+    if (closing) return;
     const tasks = nativeTasks();
     const signature = JSON.stringify([tasks, feed.connected, feed.message, indexError]);
     if (signature === boardSignature) return;
     boardSignature = signature;
+    if (indexError) { scheduleBoardUpdate(); return; }
     store.arrange(tasks).then(scheduleBoardUpdate, error => {
       boardSignature = '';
       for (const stream of boardStreams) stream.write(`data: ${JSON.stringify({ error: 'Cannot sync card status: ' + error.message })}\n\n`);
     });
-  };
-  feed.on('change', onFeedChange);
+  }
+  feed.on('change', syncBoard);
+  refresh();
+  const timer = setInterval(refresh, 5000);
+  timer.unref();
   const server = http.createServer(async (req, res) => {
     const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     res.setHeader('Cache-Control', 'no-store');
@@ -151,11 +154,11 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
       return send(200, boardResponse(board));
     } catch (error) { return send(error.status ?? 500, { error: error.message, uncertain: error.uncertain ?? false }); }
   });
-  return { server, snapshot, close() {
+  return { server, close() {
     if (!closing) closing = (async () => {
       clearInterval(timer);
       clearTimeout(boardUpdate);
-      feed.off('change', onFeedChange);
+      feed.off('change', syncBoard);
       const stopped = new Promise((resolve, reject) => server.close(error => error && error.code !== 'ERR_SERVER_NOT_RUNNING' ? reject(error) : resolve()));
       for (const stream of streams) stream.end();
       await stopped;

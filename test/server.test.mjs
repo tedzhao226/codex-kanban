@@ -19,8 +19,9 @@ async function fixture(t, ids = [id]) {
   writeFileSync(rolloutPath, '');
   const feed = Object.assign(new EventEmitter(), { states: new Map(), conversations: new Map(), connected: true, protocolOK: true,
     message: 'Connected to Codex', sync() {}, close() {}, retain: () => () => {}, loadHistory: async () => {} });
+  const index = { list: () => ids.map(id => ({ id, cwd: directory, title: 'Existing native chat', updatedAt: 1 })), rolloutPath: () => rolloutPath, close() {} };
   const app = createApp({
-    index: { list: () => ids.map(id => ({ id, cwd: directory, title: 'Existing native chat', runtime: 'idle', updatedAt: 1 })), rolloutPath: () => rolloutPath, close() {} },
+    index,
     feed,
     store: await BoardStore.open(storePath), openThread: async value => { opened.push(value); },
   });
@@ -30,7 +31,7 @@ async function fixture(t, ids = [id]) {
   const base = `http://127.0.0.1:${app.server.address().port}`;
   const board = await (await fetch(base + '/api/board')).json();
   const post = (action, body = {}, headers = {}, taskId = id) => fetch(`${base}/api/tasks/${taskId}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-kanban-token': board.token, ...headers }, body: JSON.stringify(body) });
-  return { app, base, board, opened, post, storePath, feed, directory };
+  return { app, base, board, opened, post, storePath, feed, directory, index };
 }
 
 async function boardEvents(t, base) {
@@ -55,6 +56,33 @@ async function boardEvents(t, base) {
   await stream.next();
   return stream;
 }
+
+test('native index changes notify board viewers without a desktop status event', { timeout: 3000 }, async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const { base, index } = await fixture(t);
+  const events = await boardEvents(t, base);
+  t.mock.method(index, 'list', () => []);
+  t.mock.timers.tick(5000);
+  assert.equal((await events.next()).done, false);
+  assert.deepEqual((await (await fetch(base + '/api/board')).json()).tasks, []);
+});
+
+test('an index read failure and its recovery notify viewers without a refresh loop', { timeout: 3000 }, async t => {
+  const { setTimeout: delay } = await import('node:timers/promises');
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const { base, index } = await fixture(t);
+  const events = await boardEvents(t, base);
+  const list = t.mock.method(index, 'list', () => { throw new Error('Native SQLite is busy.'); });
+  t.mock.timers.tick(5000);
+  assert.equal((await events.next()).done, false);
+  assert.equal((await fetch(base + '/api/board')).status, 500);
+  const next = events.next();
+  assert.equal(await Promise.race([next, delay(350, 'no repeated notification')]), 'no repeated notification');
+  list.mock.restore();
+  t.mock.timers.tick(5000);
+  assert.equal((await next).done, false);
+  assert.equal((await fetch(base + '/api/board')).status, 200);
+});
 
 for (const [status, runtime, column] of [
   [{ type: 'active', activeFlags: [] }, 'running', 'running'],
@@ -96,6 +124,30 @@ test('a run that finishes between board reads still releases manual Done', async
   assert.equal(board.tasks[0].column, 'review');
   assert.equal(board.tasks[0].manual, false);
   assert.equal(board.tasks[0].layoutRevision, 2);
+});
+
+test('status synchronization retries after a SQLite lock without another desktop event', { timeout: 4000 }, async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const { base, feed, post, storePath } = await fixture(t);
+  assert.equal((await post('move', { column: 'done', expectedLayoutRevision: 0 })).status, 200);
+  const events = await boardEvents(t, base);
+  const db = new DatabaseSync(storePath);
+  t.after(() => db.close());
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    feed.states.set(id, { threadRuntimeStatus: { type: 'active', activeFlags: [] } });
+    feed.emit('change');
+    assert.match(JSON.parse((await events.next()).value).error, /Cannot sync card status/);
+    assert.equal(db.prepare('SELECT manual_lane FROM card_state WHERE thread_id = ?').get(id).manual_lane, 'done');
+  } finally { db.exec('ROLLBACK'); }
+  t.mock.timers.tick(5000);
+  assert.deepEqual(JSON.parse((await events.next()).value), {});
+  const saved = db.prepare('SELECT manual_lane, revision FROM card_state WHERE thread_id = ?').get(id);
+  assert.equal(saved.manual_lane, null);
+  assert.equal(saved.revision, 2);
+  const board = await (await fetch(base + '/api/board')).json();
+  assert.equal(board.tasks[0].column, 'running');
+  assert.equal(board.tasks[0].layoutRevision, saved.revision);
 });
 
 test('board action opens the same native task ID; moves persist separately', async t => {
