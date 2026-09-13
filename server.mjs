@@ -23,7 +23,7 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
   const token = randomBytes(32).toString('hex');
   const conversations = new Conversations(index, feed);
   const streams = new Set();
-  let threads = [], indexError = null;
+  let threads = [], indexError = null, closing;
   const refresh = () => {
     try { threads = index.list(); feed.sync(threads.map(thread => thread.id)); indexError = null; }
     catch (error) { indexError = error.message; }
@@ -31,10 +31,11 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
   refresh();
   const timer = setInterval(refresh, 5000);
   timer.unref();
-  function snapshot() {
+  const nativeTasks = () => threads.map(thread => ({ ...thread, runtime: runtimeLabel(feed.states.get(thread.id)) }));
+  const boardResponse = board => ({ ...board, columns: COLUMNS, connection: { connected: feed.connected, message: feed.message }, token, refreshedAt: Date.now() });
+  async function snapshot() {
     if (indexError) throw new Error('Cannot read native Codex tasks: ' + indexError);
-    const tasks = store.arrange(threads.map(thread => ({ ...thread, runtime: runtimeLabel(feed.states.get(thread.id)) })));
-    return { tasks, columns: COLUMNS, connection: { connected: feed.connected, message: feed.message }, token, refreshedAt: Date.now() };
+    return boardResponse(await store.arrange(nativeTasks()));
   }
   const server = http.createServer(async (req, res) => {
     const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
@@ -42,12 +43,13 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    if (closing) return send(503, { error: 'The server is shutting down.' });
     const port = server.address().port;
     const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
     if (!hosts.has(req.headers.host) || (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) || req.headers['sec-fetch-site'] === 'cross-site') return send(403, { error: 'This board only accepts requests from its own local page.' });
     const url = new URL(req.url, `http://${req.headers.host}`);
     try {
-      if (req.method === 'GET' && url.pathname === '/api/board') { refresh(); return send(200, snapshot()); }
+      if (req.method === 'GET' && url.pathname === '/api/board') { refresh(); return send(200, await snapshot()); }
       if (req.method === 'GET' && assets[url.pathname]) {
         const [name, type] = assets[url.pathname];
         const data = await readFile(join(root, name));
@@ -97,16 +99,30 @@ export function createApp({ index, feed, store, openThread = id => execute('/usr
       if (input === null || typeof input !== 'object' || Array.isArray(input)) return send(400, { error: 'Expected a JSON object.' });
       if (action === 'message' || action === 'interrupt') return send(200, await conversations.act(id, action, input));
       if (action === 'open') { await openThread(id); return send(200, { opened: true, threadId: id }); }
-      if (action === 'reset') store.reset(id);
+      if (!Number.isSafeInteger(input.expectedLayoutRevision) || input.expectedLayoutRevision < 0) return send(400, { error: 'A valid expectedLayoutRevision is required.' });
+      if (closing) return send(503, { error: 'The server is shutting down.' });
+      refresh();
+      if (indexError) throw new Error('Cannot read native Codex tasks: ' + indexError);
+      let board;
+      if (action === 'reset') board = await store.reset(id, nativeTasks(), input.expectedLayoutRevision);
       else {
         if (!COLUMNS.includes(input.column) || (input.beforeId != null && !isThreadId(input.beforeId))) return send(400, { error: 'Invalid destination.' });
-        if (input.beforeId != null && !snapshot().tasks.some(task => task.id === input.beforeId && task.id !== id && task.column === input.column)) return send(409, { error: 'The destination card moved. Refresh and try again.' });
-        store.move(id, input.column, input.beforeId ?? null, snapshot().tasks);
+        board = await store.move(id, input.column, input.beforeId ?? null, nativeTasks(), input.expectedLayoutRevision);
       }
-      return send(200, snapshot());
+      return send(200, boardResponse(board));
     } catch (error) { return send(error.status ?? 500, { error: error.message, uncertain: error.uncertain ?? false }); }
   });
-  return { server, snapshot, close() { clearInterval(timer); for (const stream of streams) stream.end(); conversations.close(); feed.close(); index.close(); return new Promise(resolve => server.close(resolve)); } };
+  return { server, snapshot, close() {
+    if (!closing) closing = (async () => {
+      clearInterval(timer);
+      const stopped = new Promise((resolve, reject) => server.close(error => error && error.code !== 'ERR_SERVER_NOT_RUNNING' ? reject(error) : resolve()));
+      for (const stream of streams) stream.end();
+      await stopped;
+      conversations.close(); feed.close(); index.close();
+      await store.close();
+    })();
+    return closing;
+  } };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -115,10 +131,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be between 1 and 65535.');
   const index = new TaskIndex(codexHome);
   const feed = new DesktopFeed(join(codexHome, 'ipc', 'ipc.sock'));
-  const store = new BoardStore(join(root, '.data', 'board.json'));
+  const store = await BoardStore.open(join(root, '.data', 'board.sqlite'));
+  if (store.migrationWarning) console.warn(store.migrationWarning);
   const app = createApp({ index, feed, store });
   feed.start();
-  app.server.on('error', error => { console.error(error.message); feed.close(); index.close(); process.exitCode = 1; });
+  app.server.on('error', async error => { console.error(error.message); process.exitCode = 1; await app.close(); });
   app.server.listen(port, '127.0.0.1', () => console.log(`Codex Kanban: http://127.0.0.1:${port}`));
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { await app.close(); process.exit(0); });
 }

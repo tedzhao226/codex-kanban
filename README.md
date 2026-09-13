@@ -75,8 +75,34 @@ A future desktop update may require adapter changes.
 Connection failures and protocol mismatches are shown on the board.
 
 Native opening uses macOS `open` with `codex://threads/<task-id>`.
-Board lanes and card order are stored separately in `.data/board.json`, excluded from Git.
-Delete that file while the server is stopped to reset your board layout.
+Board lanes, card order, and layout revisions are stored separately in `.data/board.sqlite`, excluded from Git together with its WAL sidecar files.
+A persistent worker owns the SQLite connection, keeping board reads, writes, and lock waits off the HTTP thread.
+The supported setup is one local server with multiple browser tabs or API clients on the same Mac.
+Different cards can be edited concurrently; moving a card from a stale view returns a conflict and refreshes that editor without retrying the move.
+Other tabs refresh every four seconds, except that visible board replacement waits until an active drag or lane-selector interaction ends.
+
+On first startup, the server imports the existing `board.json` transactionally and archives it as `board.json.bak`.
+An existing backup is never overwritten; if it prevents archival, startup prints a warning and leaves both JSON files intact.
+Once initialized, SQLite is authoritative and JSON is never reimported or used as a fallback.
+Corrupt data and unsupported schema versions stop startup with an error.
+
+### Board backup and reset
+
+For a file backup, stop the server with Ctrl+C and wait for clean shutdown before copying `.data/board.sqlite`.
+Do not copy only the main database while the server is running: committed data can still be in `board.sqlite-wal`.
+For an online backup, use SQLite's backup command with owner-only file permissions:
+
+```sh
+umask 077
+sqlite3 .data/board.sqlite ".backup '.data/board-backup.sqlite'"
+```
+
+To reset the layout, stop the server, keep a backup, and remove `board.sqlite` and any remaining `board.sqlite-wal` and `board.sqlite-shm` files together.
+Ensure no active `board.json` remains, or startup will import it; `board.json.bak` is never imported.
+Restart the server and reload open browser tabs.
+To restore, stop the server, replace the database with a verified SQLite backup, remove stale sidecars, then restart and reload.
+
+### Local request protection
 
 The server binds to `127.0.0.1` only.
 It checks request hosts and origins, requires a per-process token for transcript reads, streams, and actions, and serves no cross-origin API.
@@ -91,6 +117,12 @@ npm run check
 npm test
 ```
 
-Tests cover board persistence, task discovery, IPC updates and revision recovery, transcript filtering and pagination, native reply/steer/stop routing, duplicate submission handling, and HTTP/SSE boundaries.
+Browser concurrency checks require Ego Lite and use an isolated fixture server with no native task actions:
+
+```sh
+npm run test:board:browser
+```
+
+Tests cover SQLite migration, concurrent layout edits, revision conflicts, rollback and worker lifecycle, task discovery, IPC updates and revision recovery, transcript filtering and pagination, native reply/steer/stop routing, duplicate submission handling, and HTTP/SSE boundaries.
 The source uses Node’s built-in HTTP, SQLite, and test modules with a plain JavaScript browser UI.
 `marked` parses Markdown and `dompurify` sanitizes the rendered output; both are served locally.

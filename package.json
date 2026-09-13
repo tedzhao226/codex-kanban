@@ -11,7 +11,8 @@
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
     "test": "node --test",
-    "check": "node --check server.mjs && node --check public/app.js && node --check public/chat.js && node --check public/markdown.js"
+    "check": "node --check server.mjs && node --check lib/board.mjs && node --check lib/board-worker.mjs && node --check public/app.js && node --check public/chat.js && node --check public/markdown.js",
+    "test:board:browser": "node scripts/verify-board.mjs"
   },
   "dependencies": {
     "dompurify": "3.4.15",

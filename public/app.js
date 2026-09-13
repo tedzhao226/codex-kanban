@@ -4,7 +4,9 @@ const names = { backlog: 'Backlog', running: 'Running', 'needs-input': 'Needs in
 const runtimeNames = { 'not-loaded': 'Status unavailable', running: 'Running in Codex', 'needs-input': 'Waiting for you', idle: 'Idle in Codex', error: 'Task error' };
 const emptyText = { backlog: ['A clear starting point', 'Tasks without live status land here.'], running: ['Room to make progress', 'Active tasks appear here automatically.'], 'needs-input': ['Nothing waiting on you', 'Approvals and questions appear here.'], review: ['Ready when you are', 'Idle tasks land here for review.'], done: ['Make room for what’s next', 'Move finished work here.'] };
 const $ = selector => document.querySelector(selector);
-let state, project = '', search = '', signature = '', dragging = null, busy = false, loading = false, toastTimer;
+let state, project = '', search = '', signature = '', dragging = null, refreshPending, toastTimer;
+let requestSequence = 0, appliedSequence = 0, renderDeferred = false;
+const pendingCards = new Set();
 const chat = createChatPanel({ getToken: () => state?.token, openNative: id => request(`/api/tasks/${id}/open`, {}),
   onSelection: id => document.querySelectorAll('.card').forEach(node => node.classList.toggle('selected', node.dataset.id === id)) });
 
@@ -35,7 +37,7 @@ function toast(message, failure = false) {
 async function request(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-kanban-token': state.token }, body: JSON.stringify(body) });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+  if (!response.ok) throw Object.assign(new Error(data.error || `Request failed (${response.status}).`), { status: response.status, uncertain: data.uncertain });
   return data;
 }
 
@@ -62,7 +64,9 @@ function renderProjects() {
 function card(task) {
   const node = element('article', 'card' + (chat.selectedId() === task.id ? ' selected' : ''));
   node.dataset.id = task.id;
-  node.draggable = true;
+  node.dataset.layoutRevision = task.layoutRevision;
+  node.draggable = !pendingCards.has(task.id);
+  node.setAttribute('aria-busy', String(pendingCards.has(task.id)));
   const top = element('div', 'card-top');
   const when = element('time', 'card-time', relativeTime(task.updatedAt));
   when.dateTime = new Date(task.updatedAt).toISOString();
@@ -80,6 +84,7 @@ function card(task) {
   node.append(runtime);
   const footer = element('div', 'card-footer');
   const select = element('select', 'lane-select');
+  select.disabled = pendingCards.has(task.id);
   select.setAttribute('aria-label', `Move ${task.title}`);
   const auto = element('option', '', task.manual ? 'Follow task status' : `Auto · ${names[task.column]}`);
   auto.value = 'auto';
@@ -100,7 +105,9 @@ function card(task) {
 
 function render(force = false) {
   if (!state) return;
-  const next = JSON.stringify([state.tasks, state.connection, project, search]);
+  if (dragging || document.activeElement?.matches('.lane-select')) { renderDeferred = true; return; }
+  renderDeferred = false;
+  const next = JSON.stringify([state.tasks, state.connection, project, search, [...pendingCards]]);
   if (!force && signature === next) return;
   signature = next;
   renderProjects();
@@ -135,37 +142,50 @@ function render(force = false) {
   $('#board').setAttribute('aria-busy', 'false');
 }
 
-async function refresh() {
-  if (loading || busy || dragging || document.activeElement?.matches('.lane-select')) return;
-  loading = true;
-  try {
-    const updated = await request('/api/board');
-    if (busy || dragging) return;
-    state = updated;
-    render();
-    $('#sync-time').textContent = `Synced ${new Date(state.refreshedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  } catch (error) {
-    $('#error').textContent = error.message + ' Check that the local server is running, then refresh.';
-    $('#error').hidden = false;
-    $('#connection').textContent = 'Board offline';
-    $('#connection').classList.add('offline');
-    $('#board').setAttribute('aria-busy', 'false');
-    signature = '';
-  } finally { loading = false; }
+function acceptSnapshot(updated, sequence) {
+  if (state && (updated.boardRevision < state.boardRevision || (updated.boardRevision === state.boardRevision && sequence < appliedSequence))) return;
+  state = updated;
+  appliedSequence = Math.max(appliedSequence, sequence);
+  render();
+  $('#sync-time').textContent = `Synced ${new Date(state.refreshedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-async function move(id, column, beforeId = null) {
-  if (busy) return;
-  const keyboard = document.activeElement?.matches('.lane-select');
-  busy = true;
+async function refresh(force = false) {
+  if (refreshPending && !force) return refreshPending;
+  const sequence = ++requestSequence;
+  const operation = (async () => {
+    try { acceptSnapshot(await request('/api/board'), sequence); }
+    catch (error) {
+      if (sequence < appliedSequence) return;
+      $('#error').textContent = error.message + ' Check that the local server is running, then refresh.';
+      $('#error').hidden = false;
+      $('#connection').textContent = 'Board offline';
+      $('#connection').classList.add('offline');
+      $('#board').setAttribute('aria-busy', 'false');
+      signature = '';
+    }
+  })();
+  refreshPending = operation;
+  try { await operation; }
+  finally { if (refreshPending === operation) refreshPending = null; }
+}
+
+async function move(id, column, beforeId, expectedLayoutRevision, keyboard = false) {
+  if (pendingCards.has(id)) return;
+  pendingCards.add(id);
+  render(true);
+  const sequence = ++requestSequence;
   try {
-    state = await request(`/api/tasks/${id}/${column === 'auto' ? 'reset' : 'move'}`, { column, beforeId });
-    render(true);
+    acceptSnapshot(await request(`/api/tasks/${id}/${column === 'auto' ? 'reset' : 'move'}`, { column, beforeId, expectedLayoutRevision }), sequence);
     toast(column === 'auto' ? 'Task now follows its Codex status' : `Moved to ${names[column]}`);
-  } catch (error) { toast(error.message, true); render(true); }
+  } catch (error) {
+    if (error.status === 409 || error.uncertain) await refresh(true);
+    toast(error.uncertain ? error.message + ' Check the board before trying again.' : error.message, true);
+  }
   finally {
-    busy = false;
-    if (keyboard) document.querySelector(`[data-id="${id}"] .lane-select`)?.focus();
+    pendingCards.delete(id);
+    render(true);
+    if (keyboard && document.activeElement === document.body && !dragging) document.querySelector(`[data-id="${id}"] .lane-select`)?.focus();
   }
 }
 
@@ -182,7 +202,7 @@ document.addEventListener('keydown', event => {
 });
 $('#board').addEventListener('click', async event => {
   const card = event.target.closest('.card');
-  if (!card || event.target.closest('select') || busy) return;
+  if (!card || event.target.closest('select')) return;
   const button = event.target.closest('[data-action="open"]');
   if (!button) { chat.open(state.tasks.find(task => task.id === card.dataset.id)); return; }
   button.disabled = true;
@@ -193,22 +213,28 @@ $('#board').addEventListener('click', async event => {
   finally { button.disabled = false; }
 });
 $('#board').addEventListener('change', event => {
-  if (event.target.matches('.lane-select')) move(event.target.closest('.card').dataset.id, event.target.value);
+  if (!event.target.matches('.lane-select')) return;
+  const card = event.target.closest('.card');
+  const keyboard = document.activeElement === event.target;
+  const column = event.target.value;
+  event.target.blur();
+  move(card.dataset.id, column, null, Number(card.dataset.layoutRevision), keyboard);
 });
+$('#board').addEventListener('focusout', () => queueMicrotask(() => { if (renderDeferred) render(true); }));
 
 function clearDragMarks() { document.querySelectorAll('.drop-over,.drop-before').forEach(node => node.classList.remove('drop-over', 'drop-before')); }
 function destination(event) {
   const column = event.target.closest('.column');
   if (!column) return null;
-  const cards = [...column.querySelectorAll('.card')].filter(node => node.dataset.id !== dragging);
+  const cards = [...column.querySelectorAll('.card')].filter(node => node.dataset.id !== dragging?.id);
   const before = cards.find(node => { const box = node.getBoundingClientRect(); return event.clientY < box.top + box.height / 2; });
   return { column, before };
 }
 $('#board').addEventListener('dragstart', event => {
   const node = event.target.closest('.card');
-  if (!node || busy || event.target.closest('select')) { event.preventDefault(); return; }
-  dragging = node.dataset.id;
-  event.dataTransfer.setData('text/plain', dragging);
+  if (!node || pendingCards.has(node.dataset.id) || event.target.closest('select')) { event.preventDefault(); return; }
+  dragging = { id: node.dataset.id, revision: Number(node.dataset.layoutRevision) };
+  event.dataTransfer.setData('text/plain', dragging.id);
   event.dataTransfer.effectAllowed = 'move';
   node.classList.add('dragging');
 });
@@ -226,15 +252,15 @@ $('#board').addEventListener('drop', event => {
   if (!dragging) return;
   event.preventDefault();
   const target = destination(event);
-  const id = dragging;
-  dragging = null;
+  const { id, revision } = dragging;
   clearDragMarks();
-  if (target) move(id, target.column.dataset.column, target.before?.dataset.id ?? null);
+  if (target) move(id, target.column.dataset.column, target.before?.dataset.id ?? null, revision);
 });
 $('#board').addEventListener('dragend', () => {
   dragging = null;
   clearDragMarks();
   document.querySelectorAll('.dragging').forEach(node => node.classList.remove('dragging'));
+  render(true);
 });
 
 refresh();
