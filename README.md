@@ -93,6 +93,29 @@ Use complete IDs returned by list commands.
 Use `--file prompt.md` or `--file -` for longer input.
 The [CLI reference](docs/cli.md) covers all options and exit codes.
 
+## Architecture
+
+Everything runs on the same Mac:
+
+```mermaid
+flowchart LR
+    client[Browser UI or CLI] -->|Local HTTP requests| server[Node.js server]
+    server -->|Responses and live updates| client
+    server -->|Reply, steer, stop via IPC| desktop[Codex Desktop]
+    desktop -->|Task status and conversation updates| server
+    files[(Codex task files)] -->|Read-only metadata and history| server
+    server -->|Save board layout and creation records| local[(Kanban local storage)]
+```
+
+Boxes are running components; cylinders are local data stores.
+The plain JavaScript browser UI and CLI share one Node.js server, which serves the board, validates requests, and streams updates.
+The server reads saved Codex tasks and connects to Desktop through local IPC for live conversations and task controls.
+Codex Desktop owns execution, credentials, and approvals; Kanban keeps its own layout in worker-managed SQLite and task-creation records in local files.
+
+Creating a task briefly starts Codex’s bundled App Server to save an empty task, then hands it to Desktop for the first prompt and execution.
+These adapters rely on private Codex interfaces and may need updates when Desktop changes.
+See [the full architecture](ARCHITECTURE.md#current-local-system) for module boundaries and state lifetimes.
+
 ## Configuration and data
 
 The server listens only on `127.0.0.1` and uses a per-process token to guard local requests.
