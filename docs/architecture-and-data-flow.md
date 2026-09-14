@@ -155,7 +155,7 @@ Moving a card to Done does not stop Codex or change its native conversation.
 There is currently no website-account database or per-user website session.
 The local process token is a request guard, not a login or a separation mechanism for multiple users.
 One local server supports concurrent browser/API clients, with per-card pending state and revision conflicts.
-The previous JSON is imported only once; see [backup/reset guidance](../README.md#back-up-or-reset-local-board-state) before copying, deleting, or restoring SQLite files.
+The previous JSON is imported only once; see [backup/reset guidance](usage.md#back-up-or-reset-local-board-state) before copying, deleting, or restoring SQLite files.
 
 ## 5. Proposed remote architecture
 
