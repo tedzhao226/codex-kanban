@@ -31,9 +31,10 @@ function publish(next = status) {
 }
 const retain = feed.retain.bind(feed);
 feed.retain = id => { const release = retain(id); publish(); return release; };
-const app = createApp({ index: { list: () => [{ id, title: 'Status sync fixture', cwd: directory, updatedAt: Date.now(), projectId: 'fixture', projectName: 'Status tests' }],
+const app = createApp({ index: { projects: () => [], list: () => [{ id, title: 'Status sync fixture', cwd: directory, updatedAt: Date.now(), projectId: 'fixture', projectName: 'Status tests' }],
   rolloutPath: () => rollout, close() {} }, feed, store: await BoardStore.open(join(directory, 'board.sqlite')),
-  openThread: async () => { throw new Error('Native actions are disabled in this fixture.'); } });
+  openThread: async () => { throw new Error('Native actions are disabled in this fixture.'); },
+  openProject: async () => { throw new Error('Native actions are disabled in this fixture.'); } });
 publish();
 const control = http.createServer(async (req, res) => {
   let body = '';

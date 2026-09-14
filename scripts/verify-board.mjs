@@ -13,9 +13,10 @@ const tasks = ['Card A', 'Card B', 'Card C'].map((title, index) => ({
 }));
 const feed = Object.assign(new EventEmitter(), { states: new Map(), conversations: new Map(), connected: true,
   protocolOK: true, message: 'Connected to Codex', sync() {}, close() {} });
-const app = createApp({ index: { list: () => tasks, close() {} }, feed,
+const app = createApp({ index: { projects: () => [], list: () => tasks, close() {} }, feed,
   store: await BoardStore.open(join(directory, 'board.sqlite')),
-  openThread: async () => { throw new Error('Native actions are disabled in this fixture.'); } });
+  openThread: async () => { throw new Error('Native actions are disabled in this fixture.'); },
+  openProject: async () => { throw new Error('Native actions are disabled in this fixture.'); } });
 app.server.listen(0, '127.0.0.1');
 await once(app.server, 'listening');
 

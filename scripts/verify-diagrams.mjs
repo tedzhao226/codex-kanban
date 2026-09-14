@@ -17,8 +17,9 @@ await writeFile(join(directory, 'rollout.jsonl'), '');
 const feed = Object.assign(new EventEmitter(), { states: new Map([[id, { threadRuntimeStatus: { type: 'idle' } }]]),
   conversations: new Map([[id, { revision: 1, state: { turns: [{ turnId: 'turn-1', turnStartedAtMs: 1, items: [{ id: 'answer', type: 'agentMessage', text }] }] } }]]),
   connected: true, protocolOK: true, message: 'Connected to fixture', sync() {}, close() {}, retain: () => () => {}, loadHistory: async () => {} });
-const app = createApp({ index: { list: () => [{ id, cwd: directory, title: 'Diagram previews', updatedAt: 1 }], rolloutPath: () => join(directory, 'rollout.jsonl'), close() {} },
-  feed, store: await BoardStore.open(join(directory, 'board.sqlite')), openThread: async () => {} });
+const app = createApp({ index: { projects: () => [], list: () => [{ id, cwd: directory, title: 'Diagram previews', updatedAt: 1 }], rolloutPath: () => join(directory, 'rollout.jsonl'), close() {} },
+  feed, store: await BoardStore.open(join(directory, 'board.sqlite')), openThread: async () => {},
+  openProject: async () => { throw new Error('Native actions are disabled in this fixture.'); } });
 app.server.listen(0, '127.0.0.1');
 await once(app.server, 'listening');
 async function checkBrowser({ base, space, screenshot }) {
