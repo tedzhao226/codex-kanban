@@ -195,6 +195,17 @@ test('local API rejects foreign origins, hosts and missing mutation tokens', asy
   assert.deepEqual(opened, []);
 });
 
+test('malformed request URLs return 400 and leave the server available', { timeout: 3000 }, async t => {
+  const { base } = await fixture(t);
+  const status = await new Promise((resolve, reject) => {
+    http.get(base, { path: 'http://[' }, response => {
+      response.resume(); resolve(response.statusCode);
+    }).on('error', reject);
+  });
+  assert.equal(status, 400);
+  assert.equal((await fetch(base + '/api/board')).status, 200);
+});
+
 test('project creation requires local authorization and publishes projects with no tasks', async t => {
   const { base, board, directory, feed } = await fixture(t, []);
   const input = { path: join(directory, 'empty-project') };

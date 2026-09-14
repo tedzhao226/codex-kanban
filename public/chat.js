@@ -212,11 +212,14 @@ export function createChatPanel({ getToken, openNative, onSelection }) {
     try {
       const result = await api(id, 'message', { ...pending, messageId: pending.id, images: current.images.map(({ name, dataUrl }) => ({ name, dataUrl })) });
       delivered(current, pending); save(id);
-      if (round === generation) { input.value = current.text; attachments(); if (result.notice) showError(result.notice); }
+      if (task?.id === id) { input.value = current.text; attachments(); if (result.notice) showError(result.notice); }
     } catch (error) {
       if (error.uncertain === false) current.pending = null;
-      save(id); if (round === generation) showError(error.message);
-    } finally { if (round === generation) { sending = false; controls(); input.focus(); } }
+      save(id); if (task?.id === id) showError(error.message);
+    } finally {
+      if (round === generation) { sending = false; input.focus(); }
+      if (task?.id === id) controls();
+    }
   });
   input.addEventListener('keydown', event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing) { event.preventDefault(); $('#chat-composer').requestSubmit(); } });
   $('#chat-stop').addEventListener('click', async () => {

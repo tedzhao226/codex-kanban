@@ -35,6 +35,10 @@ const feed = Object.assign(new EventEmitter(), { states: new Map([[id, { threadR
       return { result: { result: { turnId: 'run-1' } } };
     }
     assert.equal(method, 'thread-follower-steer-turn');
+    if (requests >= 3) {
+      assert.ok(requests <= 4, 'Reopened drafts must not cause duplicate deliveries');
+      return { result: { result: { turnId: 'run-1' } } };
+    }
     throw new Error('Fixture disconnected after submission');
   } });
 const app = createApp({ index: { projects: () => [], list: () => [{ id, cwd: directory, projectId: 'fixture', projectName: 'Fixture', title: 'Question replies and images', updatedAt }], rolloutPath: () => join(directory, 'rollout.jsonl'), close() {} },
@@ -88,6 +92,34 @@ async function checkBrowser({ base, directory, dataUrl, space, screenshot }) {
   await page.waitForFunction(() => document.querySelector('#chat-error').textContent.includes('PNG, JPEG'));
   assert.equal(await page.evaluate(() => document.querySelectorAll('#chat-images img').length), 0);
   console.log('PASS: image steering, uncertain-delivery draft retention across reload, duplicate-send guard, and unsupported image feedback.');
+  await page.evaluate(() => {
+    const fetch = window.fetch.bind(window);
+    window.fetch = async (url, options) => {
+      const response = await fetch(url, options);
+      if (!String(url).endsWith('/message')) return response;
+      return new Promise(resolve => { window.releaseMessage = () => { delete window.releaseMessage; resolve(response); }; });
+    };
+  });
+  for (const nextDraft of ['', 'New guidance typed while delivery is pending']) {
+    await page.setInputFiles('#chat-image-files', [directory + '/screenshot.png']);
+    await page.fill('#chat-input', 'Guidance sent before reopening');
+    await page.waitForFunction(() => !document.querySelector('#chat-send').disabled);
+    await page.click('#chat-send');
+    await page.waitForFunction(() => Boolean(window.releaseMessage));
+    await page.click('#chat-close'); await page.click('.card-title');
+    await page.waitForFunction(() => document.querySelector('#chat-status').textContent.includes('Running'));
+    if (nextDraft) await page.fill('#chat-input', nextDraft);
+    await page.evaluate(() => window.releaseMessage());
+    await page.waitForFunction(text => document.querySelector('#chat-input').value === text && document.querySelector('#chat-images').hidden &&
+      document.querySelector('#chat-delivery').hidden, nextDraft, { timeout: 5000 });
+    assert.deepEqual(await page.evaluate(() => ({ images: document.querySelectorAll('#chat-images img').length,
+      sendDisabled: document.querySelector('#chat-send').disabled, attachDisabled: document.querySelector('#chat-attach').disabled })),
+    { images: 0, sendDisabled: !nextDraft, attachDisabled: false });
+  }
+  await page.reload(); await page.waitForSelector('.card-title'); await page.click('.card-title');
+  assert.equal(await page.evaluate(() => document.querySelector('#chat-input').value), 'New guidance typed while delivery is pending');
+  assert.equal(await page.evaluate(() => document.querySelectorAll('#chat-images img').length), 0);
+  console.log('PASS: reopening during delivery clears sent text and images, restores controls, and preserves newer draft text across reload.');
   if (screenshot) await page.screenshot({ path: screenshot });
   console.log(await page.snapshot());
   if (!space) await task.finish({ keep: [] });
@@ -99,5 +131,5 @@ try {
     space: Number(process.env.KANBAN_BROWSER_SPACE) || undefined, screenshot: process.env.KANBAN_SCREENSHOT })});`);
   const [code] = await once(child, 'exit');
   if (code !== 0) process.exitCode = 1;
-  else assert.equal(requests, 2);
+  else assert.equal(requests, 4);
 } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }

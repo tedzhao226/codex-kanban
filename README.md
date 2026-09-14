@@ -15,11 +15,22 @@ The default tests do not require a Codex account or credentials. See [compatibil
 From a clean checkout:
 
 ```sh
+git clone https://github.com/tedzhao226/codex-kanban.git
+cd codex-kanban
 npm ci
 npm start
 ```
 
 Open <http://127.0.0.1:4317>. Keep the server terminal running. To use another loopback port, run `PORT=4318 npm start`. `CODEX_HOME` can point to a different Codex data directory.
+
+Task creation defaults to `/Applications/ChatGPT.app/Contents/Resources/codex`, the app bundle used in the compatibility checks.
+If your installation is named `Codex.app`, start the server with its executable path instead:
+
+```sh
+KANBAN_CODEX_BIN=/Applications/Codex.app/Contents/Resources/codex npm start
+```
+
+For an installation elsewhere, set `KANBAN_CODEX_BIN` to its actual bundled executable.
 
 Useful checks:
 
@@ -83,6 +94,8 @@ Set `KANBAN_CODEX_BIN` to the bundled Codex CLI path when the Desktop app is ins
 Reference material is grouped in [architecture and data flow](docs/architecture-and-data-flow.md), [research](docs/research/), and [planning](docs/plans/). These documents contain dated observations and proposals, not additional compatibility promises.
 
 The proposed hosted design in the architecture documents is planning material. The current release is local-only.
+
+The source is publicly available, but no open-source license has been granted yet.
 
 ## Back up or reset local board state
 

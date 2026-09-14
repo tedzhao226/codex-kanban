@@ -44,7 +44,7 @@ async function fixture(t) {
     child.stdin.end(input);
     return new Promise((resolve, reject) => { child.on('error', reject); child.on('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); }); });
   }
-  return { cli, calls, token, view, state };
+  return { cli, calls, token, view, state, task };
 }
 
 test('CLI lists projects and filtered tasks as JSON without exposing its request token', async t => {
@@ -120,4 +120,58 @@ test('CLI reads saved history and follows JSON events until interrupted', async 
   assert.match((await cli(['task', 'show', id])).stdout, /\[assistant\] hello/);
   const follow = await cli(['task', 'show', id, '--follow', '--json'], { stopOn: 'hello' });
   assert.equal(follow.code, 0); assert.equal(JSON.parse(follow.stdout.trim()).id, id); assert.equal(follow.stderr, '');
+});
+
+const controls = '\u001b]52;c;YXR0YWNrZXI=\u0007\r\b\u007f\u009b31m';
+const unsafeControls = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
+
+test('CLI history and follow output escape controls and retain text layout and tool results', async t => {
+  const { cli, view } = await fixture(t);
+  view.items = [
+    { id: 'message', kind: 'assistant', text: 'First\n\tSecond ' + controls },
+    { id: 'tool', kind: 'tool', title: 'npm test ' + controls, status: 'failed', detail: 'Assertion failed\n\texpected 1, got 2' },
+  ];
+  for (const args of [[], ['--follow']]) {
+    const result = await cli(['task', 'show', id, ...args], { stopOn: 'expected 1, got 2' });
+    assert.equal(result.code, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, unsafeControls);
+    assert.match(result.stdout, /First\n\tSecond/);
+    assert.ok(result.stdout.includes('\\u001b]52;c;YXR0YWNrZXI=\\u0007\\u000d\\u0008\\u007f\\u009b31m'));
+    assert.match(result.stdout, /\[tool\] npm test/);
+    assert.match(result.stdout, /failed/);
+    assert.match(result.stdout, /Assertion failed\n\texpected 1, got 2/);
+  }
+});
+
+test('CLI JSON history safely round-trips transcript controls and tool fields', async t => {
+  const { cli, view } = await fixture(t);
+  view.items = [{ id: 'tool', kind: 'tool', title: 'npm test', status: 'failed', detail: 'Failure\n\t' + controls }];
+  const result = await cli(['task', 'show', id, '--json']);
+  assert.equal(result.code, 0);
+  assert.doesNotMatch(result.stdout, unsafeControls);
+  assert.deepEqual(JSON.parse(result.stdout).items, view.items);
+});
+
+test('CLI creation output escapes controls in returned identifiers', async t => {
+  const { cli, task } = await fixture(t);
+  task.id = id + controls;
+  const result = await cli(['task', 'create', '--project', 'project', '--prompt', 'Work']);
+  assert.equal(result.code, 0);
+  assert.doesNotMatch(result.stdout, unsafeControls);
+  assert.ok(result.stdout.includes(id + '\\u001b'));
+});
+
+test('CLI diagnostics escape server errors and identifiers in plain and JSON output', async t => {
+  const { cli, state } = await fixture(t);
+  state.failure = { status: 503, body: { error: 'Failed\n\t' + controls, threadId: id + controls } };
+  const plain = await cli(['task', 'create', '--project', 'project', '--prompt', 'Work']);
+  assert.equal(plain.code, 3);
+  assert.doesNotMatch(plain.stderr, unsafeControls);
+  assert.ok(plain.stderr.includes('Failed\n\t\\u001b'));
+  assert.ok(plain.stderr.includes('Task: ' + id + '\\u001b'));
+  const json = await cli(['task', 'create', '--project', 'project', '--prompt', 'Work', '--json']);
+  assert.equal(json.code, 3);
+  assert.doesNotMatch(json.stderr, unsafeControls);
+  assert.equal(JSON.parse(json.stderr).error, state.failure.body.error);
+  assert.equal(JSON.parse(json.stderr).threadId, state.failure.body.threadId);
 });

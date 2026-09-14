@@ -76,7 +76,8 @@ export function createApp({ index, feed, store, openThread = (id, background = f
     const port = server.address().port;
     const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
     if (!hosts.has(req.headers.host) || (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) || req.headers['sec-fetch-site'] === 'cross-site') return send(403, { error: 'This board only accepts requests from its own local page.' });
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    const url = URL.parse(req.url, `http://${req.headers.host}`);
+    if (!url) return send(400, { error: 'Invalid request URL.' });
     try {
       if (req.method === 'GET' && url.pathname === '/api/board') { refresh(); return send(200, await snapshot()); }
       if (req.method === 'GET' && url.pathname === '/api/board/events') {

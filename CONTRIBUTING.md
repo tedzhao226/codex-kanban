@@ -25,6 +25,9 @@ Keep changes focused and document behavior that depends on private Codex Desktop
 
 ## Bug reports and contributions
 
-Only share redacted, reproducible details: operating-system and Node versions, app version observations, commands, sanitized logs, and a minimal fixture. Never disclose credentials, tokens, task transcripts, absolute personal paths, or private database contents. The project does not yet have a public issue or vulnerability-reporting address; configuring a private reporting channel is a release prerequisite. Until then, do not disclose security details publicly.
+Use [GitHub issues](https://github.com/tedzhao226/codex-kanban/issues) for reproducible bugs.
+Only share redacted details: operating-system and Node versions, app version observations, commands, sanitized logs, and a minimal fixture.
+Never disclose credentials, tokens, task transcripts, absolute personal paths, or private database contents.
+Report vulnerabilities privately as described in [Security](SECURITY.md).
 
 Hosted login, remote execution, cloud storage, and multi-user authorization remain proposed future work and are outside this local release.
