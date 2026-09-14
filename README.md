@@ -1,6 +1,20 @@
 # Codex Kanban
 
-Codex Kanban is an unofficial, local macOS alpha for people who already use Codex Desktop tasks. It provides a browser Kanban board and CLI for organizing and continuing those native tasks. It does not provide hosted accounts, remote execution, cloud storage, or multi-user isolation.
+See what’s running, what needs you, and what’s ready to review.
+Codex Kanban brings your Codex Desktop tasks into a local board, with conversations one click away.
+
+![Codex Kanban showing sample tasks across Backlog, Running, Needs input, Review, and Done](docs/images/board.png)
+
+*The screenshots use sample projects and conversations in the app’s actual interface.*
+
+- **Organize your work.** Drag cards between lanes, reorder them, and filter by project, search, or last update.
+- **Follow live progress.** Running tasks, approval requests, and idle tasks update their lanes automatically.
+- **Continue a conversation.** Read replies, attach images, send a follow-up, steer a run, or stop it from the side panel.
+- **Start from the board or terminal.** Create local projects and tasks with the UI or optional CLI.
+
+An unofficial macOS alpha that runs on your machine alongside Codex Desktop.
+Your tasks keep their native history and workspace; approvals stay in Codex.
+No separate API key is needed.
 
 ## Prerequisites
 
@@ -8,7 +22,7 @@ Codex Kanban is an unofficial, local macOS alpha for people who already use Code
 - Node.js 24 or newer
 - Codex Desktop installed, signed in, and containing local tasks for native features
 
-The default tests do not require a Codex account or credentials. See [compatibility and support](docs/compatibility.md) for version observations and native smoke-test limits.
+See [compatibility and support](docs/compatibility.md) for tested version observations and limitations.
 
 ## Quick start
 
@@ -21,7 +35,9 @@ npm ci
 npm start
 ```
 
-Open <http://127.0.0.1:4317>. Keep the server terminal running. To use another loopback port, run `PORT=4318 npm start`. `CODEX_HOME` can point to a different Codex data directory.
+Open [the board](http://127.0.0.1:4317) and keep the server terminal running.
+To use another port, run `PORT=4318 npm start`.
+Set `CODEX_HOME` if your Codex data lives elsewhere.
 
 Task creation defaults to `/Applications/ChatGPT.app/Contents/Resources/codex`, the app bundle used in the compatibility checks.
 If your installation is named `Codex.app`, start the server with its executable path instead:
@@ -32,7 +48,7 @@ KANBAN_CODEX_BIN=/Applications/Codex.app/Contents/Resources/codex npm start
 
 For an installation elsewhere, set `KANBAN_CODEX_BIN` to its actual bundled executable.
 
-Useful checks:
+To check your source checkout, run:
 
 ```sh
 npm run check
@@ -43,9 +59,18 @@ npm pack --dry-run
 
 ## Board and CLI use
 
-Create a project with an absolute path or a path beginning with `~/`, then create tasks from that project. The board reads native task metadata and saved history; Codex Desktop remains the owner of execution, credentials, approvals, and native task state. Keep the server on loopback. Do not expose it through a tunnel, proxy, or LAN bind.
+Choose **+ New project** and enter a folder path, then use **+ New task** to describe the work.
+Click any card to open its conversation beside the board.
+Reply when it’s idle, or use **Steer** to give an active run new guidance.
+For approvals and native tools, choose **Open in Codex**.
 
-The optional CLI can be linked once with `npm link`:
+![A running task open beside the board, with its conversation, tool activity, and a draft steering message](docs/images/conversation.png)
+
+Project paths must be absolute or start with `~/`.
+Tasks use the project’s existing local folder; worktrees and cloud tasks are not supported.
+See [board usage](docs/usage.md) for lane behavior, image attachments, and draft recovery.
+
+For terminal access, run `npm link` once, then use the same running server:
 
 ```sh
 codex-kanban --help
@@ -62,15 +87,24 @@ codex-kanban task reset TASK_ID
 codex-kanban task open TASK_ID
 ```
 
-Without linking, use `npm run cli -- --help`. Use complete IDs returned by list commands. `--port 4318` selects another port and `--json` returns machine-readable output. Use `--file prompt.md` or `--file -` for longer input. See [board usage](docs/usage.md) for lanes, the conversation panel, and image attachments, and the [CLI reference](docs/cli.md) for all options and exit codes.
+Without linking, use `npm run cli -- --help`.
+Use complete IDs returned by list commands.
+`--port 4318` selects another port, and `--json` returns machine-readable output.
+Use `--file prompt.md` or `--file -` for longer input.
+The [CLI reference](docs/cli.md) covers all options and exit codes.
 
 ## Configuration and data
 
-The server binds to `127.0.0.1` and uses a per-process request token for protected routes. This token is not login or user authentication. `PORT` changes the port; `CODEX_HOME` changes where Codex data is read. Kanban's layout and request records are stored under `.data/`, which is local state and is ignored by Git. Browser drafts remain in tab session storage.
+The server listens only on `127.0.0.1` and uses a per-process token to guard local requests.
+It has no user login or multi-user isolation; keep it local and do not expose it through a tunnel, proxy, or LAN bind.
+Codex Desktop owns execution and credentials.
+Kanban stores board layout and task-creation records in the Git-ignored `.data/` folder, while browser drafts stay in tab session storage.
 
 Codex's database, rollout files, credentials, and Desktop IPC are private implementation details. Dated observations on 2026-09-13 recorded Codex Desktop app version `26.908.40834`, build `8881`, with bundled Codex CLI `0.154.0-alpha.6.2`; the adapter also observed IPC state version 11 and follower request versions. A Desktop update may require adapter changes; these observations are not compatibility promises. See [architecture and session state](ARCHITECTURE.md) and [compatibility](docs/compatibility.md).
 
-Set `KANBAN_CODEX_BIN` to the bundled Codex CLI path when the Desktop app is installed outside `/Applications`. Task creation request records live in `.data/task-requests` and survive restarts; keep them, because they provide duplicate-submission protection. See [usage](docs/usage.md) for details.
+Set `KANBAN_CODEX_BIN` when the bundled executable differs from the default path shown above.
+Keep `.data/task-requests` across restarts and restores: these records protect against duplicate task creation.
+See [usage](docs/usage.md) for details.
 
 ## Troubleshooting
 
