@@ -60,6 +60,19 @@ Everything Kanban writes lives under `.data/`, which is ignored by Git.
 - On first startup, the server imports an existing legacy `board.json` transactionally and archives it as `board.json.bak`. An existing backup is never overwritten; if it prevents archival, startup prints a warning and leaves both JSON files intact. Once initialized, SQLite is authoritative and JSON is never reimported. When resetting, ensure no active `board.json` remains or startup will import it; `board.json.bak` is never imported.
 - Corrupt data and unsupported schema versions stop startup with an error.
 
-Backup and reset steps are in the [README](../README.md#back-up-or-reset-local-board-state).
+See [backup and reset steps](#back-up-or-reset-local-board-state) below.
 
 Codex status changes and card moves notify all open boards immediately, with a four-second refresh for reconciliation. Native task metadata is reread every five seconds. If SQLite is temporarily locked, status synchronization reports the failure and retries on refresh.
+
+## Back up or reset local board state
+
+Stop the server and wait for it to shut down cleanly before copying `.data/board.sqlite`; while the server runs, committed data may also be in the `board.sqlite-wal` sidecar. For an online backup, use SQLite's backup command with owner-only permissions:
+
+```sh
+umask 077
+sqlite3 .data/board.sqlite ".backup '.data/board-backup.sqlite'"
+```
+
+To reset, stop the server, keep a backup, and remove `board.sqlite` together with both `board.sqlite-wal` and `board.sqlite-shm` sidecars. Ensure no active legacy `board.json` remains in `.data/`, or the next startup reimports it; `board.json.bak` is never imported.
+
+To restore, use only a verified SQLite backup with the server stopped: copy it over `board.sqlite`, remove any stale `board.sqlite-wal` and `board.sqlite-shm` sidecars, then restart the server and reload open tabs. Preserve `.data/task-requests` when resetting or restoring, because those records provide duplicate-creation protection.
