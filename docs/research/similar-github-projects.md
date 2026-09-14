@@ -10,7 +10,7 @@ These rankings are an assessment of the documented behavior, not a runtime evalu
 This repository presents existing Codex Desktop tasks as a local board and sends replies, steering, and stop requests to their original native owners.
 It reads Codex's SQLite state and uses the Desktop IPC socket without starting a separate Codex app-server.
 Board lanes and ordering are stored separately, while automatic placement follows published Desktop state.
-See the [local README](../../README.md#local-integration).
+See [native integration](../usage.md#native-integration).
 
 ## Relevant repositories
 
@@ -81,4 +81,4 @@ This is a bounded search result, not a claim that no identical project exists.
 
 Repositories, READMEs, and selected integration source were inspected; no competing application was installed or exercised.
 The popularity and activity section reports a dated API snapshot; its assessments describe observed development signals rather than a runtime quality evaluation.
-The live Markdown rule at `/Users/ted/.codex/rules/markdown.md` was missing; authoring used `/Users/ted/workspace/agent-system/backups/codex/rules/markdown.md`.
+The live Markdown rule was unavailable during this dated research pass; authoring used a local backup. No private path is required to reproduce the findings.

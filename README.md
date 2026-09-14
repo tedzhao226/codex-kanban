@@ -1,164 +1,42 @@
 # Codex Kanban
 
-A local Kanban board and CLI for your native Codex desktop tasks.
-Create projects and start tasks directly from the board.
-Open a card to read its conversation, reply, steer an active run, or stop it.
-Messages go to the original native task, keeping its history, workspace, model, and permissions.
+Codex Kanban is an unofficial, local macOS alpha for people who already use Codex Desktop tasks. It provides a browser Kanban board and CLI for organizing and continuing those native tasks. It does not provide hosted accounts, remote execution, cloud storage, or multi-user isolation.
 
-See [Architecture and session state](ARCHITECTURE.md) for the client/server map, current storage, and a proposed public service with per-user login.
+## Prerequisites
 
-## Run
+- macOS
+- Node.js 24 or newer
+- Codex Desktop installed, signed in, and containing local tasks for native features
 
-Requires macOS, Node.js 24 or newer, and the Codex desktop app installed with local tasks.
-No separate API key is needed.
+The default tests do not require a Codex account or credentials. See [compatibility and support](docs/compatibility.md) for version observations and native smoke-test limits.
+
+## Quick start
+
+From a clean checkout:
 
 ```sh
 npm ci
 npm start
 ```
 
-Open [Codex Kanban](http://127.0.0.1:4317).
-Keep the terminal process running while using the board.
-Set `PORT` to change the port or `CODEX_HOME` if your Codex data lives elsewhere.
+Open <http://127.0.0.1:4317>. Keep the server terminal running. To use another loopback port, run `PORT=4318 npm start`. `CODEX_HOME` can point to a different Codex data directory.
+
+Useful checks:
 
 ```sh
-PORT=4318 npm start
+npm run check
+npm test
+npm audit --omit=dev
+npm pack --dry-run
 ```
 
-## Use
+## Board and CLI use
 
-- Click **+ New project**, enter an absolute folder path or a path starting with `~/`, then choose **Create project**.
-  Kanban creates the folder if needed; its parent must already exist.
-  Codex registers it automatically, and the board shows the project even when it has no tasks.
-  Existing registered folders select the existing project instead of making a duplicate.
-- Click **+ New task**, select a project, enter its first prompt, and choose **Create task**.
-  The task uses the project's existing folder and opens its conversation inside Kanban.
-  Codex loads the native task in the background; creation requires no extra step in its window.
-  This version supports local project folders; it does not create worktrees or cloud tasks.
-  If creation is interrupted, **Check creation** checks the same request without repeating its first prompt.
-  Use **View task** when a task ID was returned but setup or delivery failed.
-- Filter by project, search task titles and previews, or use **Updated** to show the last day, last 3 days, last week, or all time.
-  Time ranges use the last update shown on each card, and the browser remembers your time filter after reload.
-- Drag a card between lanes or use its lane menu.
-- Drag above another card to set the order within a lane.
-- Choose **Follow task status** to restore automatic placement.
-- Click a card to open its conversation beside the board.
-- Resize the panel with its left edge or arrow keys; expand it for more space.
-- Read the newest 50 messages and activities, then use **Load earlier** for another 50.
-- Send a reply when idle, **Steer** the current run, or **Stop** it.
-- Press Cmd/Ctrl+Enter to send; drafts survive panel switches and reloads in the same browser tab.
-- Choose **+ Image** or paste a screenshot into the composer; preview or remove images before sending or steering.
-  Image-only messages are supported, with up to four PNG, JPEG, WebP, or GIF images totaling 3 MB per message.
-  Image drafts stay with the text draft; if browser storage fills up, the panel warns you to keep the page open.
-- Use **Open in Codex** for native tools, approvals, answering questions, other attachment types, and file review.
+Create a project with an absolute path or a path beginning with `~/`, then create tasks from that project. The board reads native task metadata and saved history; Codex Desktop remains the owner of execution, credentials, approvals, and native task state. Keep the server on loopback. Do not expose it through a tunnel, proxy, or LAN bind.
 
-Automatic lanes use published desktop status: active tasks go to Running, approval requests and errors go to Needs input, and idle tasks go to Review.
-Tasks without a live snapshot start in Backlog.
-Codex may only publish status after a task has been loaded in the desktop app.
-Done is always a manual choice.
-Manual placement lasts until you move the card again, restore automatic placement, or Codex starts running or needs attention.
-New activity releases the manual lane, including Done, so the card follows Codex again and returns to Review when idle.
-Reordering a card within its automatic lane keeps status tracking enabled.
-Its runtime badge always shows the current desktop status.
-
-The board displays non-archived local user tasks.
-Cloud tasks and subagents are outside this version’s scope.
-Older tasks show saved history immediately.
-If a task is not loaded in the desktop app, choose **Connect in Codex** to open the original task and enable its controls.
-The panel renders a local view of the native conversation; it does not embed the desktop interface.
-Markdown and code blocks are supported, and tool activity is collapsed.
-Mermaid and SVG code blocks render as diagrams, with a **Source** disclosure below each preview.
-Standalone SVG markup and Markdown links or images pointing to `.svg` files in the task's workspace also show previews.
-Images sent from Kanban appear inline in the conversation.
-Historical local-file images, remote images, and other attachments remain placeholders linking the workflow back to Codex.
-Recorded question replies show the question and answer without Codex's internal transport markup.
-SVG previews are static images with scripts, embedded HTML, animation, and external image references removed.
-Other raw HTML and non-HTTP links are disabled.
-Invalid or incomplete diagrams show an error with their source and update when the message changes.
-Local SVG files are limited to 1 MB; Mermaid definitions are limited to 50,000 characters and 500 edges.
-History display is limited to the newest 10,000 messages and activities; use Codex for anything earlier.
-
-Reading earlier messages does not pull the scroll position back to the bottom as replies arrive.
-Use **Jump to latest** to follow the run again.
-If delivery cannot be confirmed, the draft stays in place and requires checking the conversation before another submission.
-Steering a finished or changed run fails explicitly instead of starting another run.
-
-## Local integration
-
-The server reads `~/.codex/state_5.sqlite` in SQLite read-only mode and reads project metadata from `.codex-global-state.json`.
-It subscribes to the desktop app’s existing `~/.codex/ipc/ipc.sock` for runtime snapshots.
-Open conversation panels and temporary CLI operations retain full native snapshots and selected saved rollout history in memory.
-The saved transcript reader includes user messages, assistant messages, and tool summaries; it excludes injected instructions and internal reasoning.
-Releasing the last subscription for a task releases its transcript cache.
-
-The adapter discovers the original task owner and uses native follower requests for complete history, starting a reply, steering, and interruption.
-Project creation uses Codex's native `codex://new?path=…` entry point and waits for its project metadata to confirm registration.
-Codex must be running normally; the board does not need the experimental shared-server launch.
-Task creation briefly starts the bundled App Server to create and name an empty native task, then closes that setup process.
-Naming saves the empty history without a model turn.
-The server opens the task in Desktop, confirms its project membership, and sends the first prompt through its native owner.
-Execution continues in Desktop using the same follower requests as existing tasks.
-Kanban never edits Codex's database or rollout files directly.
-Approval and question handling remains in Codex.
-The browser receives normalized transcript items rather than raw native state.
-
-The database schema and desktop IPC are private implementation details, not a public integration API.
-This adapter targets IPC state version 11 and follower request versions observed with the installed app’s bundled Codex `0.154.0-alpha.6.2`.
-A future desktop update may require adapter changes.
-Connection failures and protocol mismatches are shown on the board.
-Set `KANBAN_CODEX_BIN` on the server to override the bundled CLI path when the application is installed elsewhere.
-Task creation request records live in `.data/task-requests` and survive server restarts.
-Keep these records to retain duplicate-submission protection; an uncertain request is never automatically recreated.
-
-Native opening uses macOS `open` with `codex://threads/<task-id>`.
-Board lanes, card order, and layout revisions are stored separately in `.data/board.sqlite`, excluded from Git together with its WAL sidecar files.
-A persistent worker owns the SQLite connection, keeping board reads, writes, and lock waits off the HTTP thread.
-The supported setup is one local server with multiple browser tabs or API clients on the same Mac.
-Different cards can be edited concurrently; moving a card from a stale view returns a conflict and refreshes that editor without retrying the move.
-Codex status changes and card moves notify all open boards immediately, with a four-second refresh for reconciliation.
-Native task metadata is reread every five seconds; changes notify open boards even when Codex sends no runtime event.
-If SQLite is temporarily locked, status synchronization reports the failure and retries on refresh, preserving observed activity even if the run finishes before the write succeeds.
-Visible board replacement waits until an active drag or lane-selector interaction ends; runtime badges continue updating during the interaction.
-
-On first startup, the server imports the existing `board.json` transactionally and archives it as `board.json.bak`.
-An existing backup is never overwritten; if it prevents archival, startup prints a warning and leaves both JSON files intact.
-Once initialized, SQLite is authoritative and JSON is never reimported or used as a fallback.
-Corrupt data and unsupported schema versions stop startup with an error.
-
-### Board backup and reset
-
-For a file backup, stop the server with Ctrl+C and wait for clean shutdown before copying `.data/board.sqlite`.
-Do not copy only the main database while the server is running: committed data can still be in `board.sqlite-wal`.
-For an online backup, use SQLite's backup command with owner-only file permissions:
+The optional CLI can be linked once with `npm link`:
 
 ```sh
-umask 077
-sqlite3 .data/board.sqlite ".backup '.data/board-backup.sqlite'"
-```
-
-To reset the layout, stop the server, keep a backup, and remove `board.sqlite` and any remaining `board.sqlite-wal` and `board.sqlite-shm` files together.
-Ensure no active `board.json` remains, or startup will import it; `board.json.bak` is never imported.
-Restart the server and reload open browser tabs.
-To restore, stop the server, replace the database with a verified SQLite backup, remove stale sidecars, then restart and reload.
-
-### Local request protection
-
-The server binds to `127.0.0.1` only.
-It checks request hosts and origins, requires a per-process token for transcript reads, streams, and actions, and serves no cross-origin API.
-Browser streams reconnect after interruptions; unconfirmed message submissions are not retried automatically.
-Drafts are stored per task in the tab’s `sessionStorage`.
-Keep it local: it can read conversations and send messages through your signed-in desktop app.
-
-## CLI
-
-The CLI source lives in this repository: `bin/codex-kanban.mjs` is the entry point and `lib/cli.mjs` contains its implementation.
-The global command installed by `npm link` points back to these files.
-The `codex-kanban` skill shares usage through Skills Manager's `code-core` profile; its personal authoring source is `~/workspace/agent-system/skills/personal/codex-kanban`.
-
-Install the workspace command once, then keep the Kanban server running:
-
-```sh
-npm link
 codex-kanban --help
 codex-kanban project list
 codex-kanban project create ~/workspace/example
@@ -173,46 +51,48 @@ codex-kanban task reset TASK_ID
 codex-kanban task open TASK_ID
 ```
 
-Without installation, use `npm run cli -- task list` from this repository.
-Use complete IDs from the list commands; task names are not mutation targets.
-Options follow the command: `--port 4318` selects another loopback port, and `--json` returns machine-readable output.
-Use `--file prompt.md` or `--file -` instead of `--prompt` or `--text` for file or stdin input.
-Task listing supports `--project`, `--column`, and `--search`; history supports `--limit 1..10000`.
-`--follow --json` emits one conversation snapshot per line until Ctrl+C.
-`task move` optionally accepts `--before TASK_ID` to position a card.
-Moving or resetting a card changes the board; stopping execution requires `task stop`.
+Without linking, use `npm run cli -- --help`. Use complete IDs returned by list commands. `--port 4318` selects another port and `--json` returns machine-readable output. Use `--file prompt.md` or `--file -` for longer input. See [board usage](docs/usage.md) for lanes, the conversation panel, and image attachments, and the [CLI reference](docs/cli.md) for all options and exit codes.
 
-The CLI acquires the local request token internally and excludes it from output.
-It loads native conversations for send, steer, and stop without needing a browser tab.
-If an older task has no native owner, use `task open` to load it in Codex before sending.
-Commands report errors on stderr and never automatically retry mutations.
-Exit codes are `0` for success, `1` for other errors, `2` for invalid input, `3` for unavailable services, `4` for conflicts, and `5` for uncertain delivery.
-Creation and message errors include their request ID; `--request-id UUID` identifies a repeat of the exact same submission.
-After uncertain task creation, reuse its request ID and original input to check the saved result, or inspect the returned task ID before starting another task.
+## Configuration and data
 
-## Verify
+The server binds to `127.0.0.1` and uses a per-process request token for protected routes. This token is not login or user authentication. `PORT` changes the port; `CODEX_HOME` changes where Codex data is read. Kanban's layout and request records are stored under `.data/`, which is local state and is ignored by Git. Browser drafts remain in tab session storage.
 
-Run `npm run probe:native-setup` to verify that the installed engine can save an empty native task without a model turn.
-It uses a temporary Codex home and no account credentials.
+Codex's database, rollout files, credentials, and Desktop IPC are private implementation details. Dated observations on 2026-09-13 recorded Codex Desktop app version `26.908.40834`, build `8881`, with bundled Codex CLI `0.154.0-alpha.6.2`; the adapter also observed IPC state version 11 and follower request versions. A Desktop update may require adapter changes; these observations are not compatibility promises. See [architecture and session state](ARCHITECTURE.md) and [compatibility](docs/compatibility.md).
 
-The [shared-server creation experiment](docs/research/shared-server-prototype.md) tests project and task creation with two clients in a temporary Codex home.
-Run it separately with `npm run probe:shared-server`; it does not connect the board or Desktop to that server.
+Set `KANBAN_CODEX_BIN` to the bundled Codex CLI path when the Desktop app is installed outside `/Applications`. Task creation request records live in `.data/task-requests` and survive restarts; keep them, because they provide duplicate-submission protection. See [usage](docs/usage.md) for details.
+
+## Troubleshooting
+
+- Check `node --version` and install dependencies with `npm ci`.
+- If port 4317 is busy, use `PORT=4318 npm start`.
+- Keep the server process running while using the board.
+- Native features require Codex Desktop to be installed and signed in with local tasks. The fixture-based default test suite does not validate native actions.
+- Native probes are separate and intentional: `npm run probe:native-setup` and `npm run probe:shared-server`.
+- Browser regression checks require Ego Lite and an isolated fixture server; they are optional contributor checks. See [contributing](CONTRIBUTING.md).
+
+## Documentation
+
+- [Board usage and configuration](docs/usage.md)
+- [CLI reference](docs/cli.md)
+- [Architecture and session state](ARCHITECTURE.md)
+- [Compatibility and support](docs/compatibility.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [Local source release checklist](docs/release-checklist.md)
+
+Reference material is grouped in [architecture and data flow](docs/architecture-and-data-flow.md), [research](docs/research/), and [planning](docs/plans/). These documents contain dated observations and proposals, not additional compatibility promises.
+
+The proposed hosted design in the architecture documents is planning material. The current release is local-only.
+
+## Back up or reset local board state
+
+Stop the server and wait for it to shut down cleanly before copying `.data/board.sqlite`; while the server runs, committed data may also be in the `board.sqlite-wal` sidecar. For an online backup, use SQLite's backup command with owner-only permissions:
 
 ```sh
-npm run check
-npm test
+umask 077
+sqlite3 .data/board.sqlite ".backup '.data/board-backup.sqlite'"
 ```
 
-Browser regression checks require Ego Lite and use an isolated fixture server with no native task actions:
+To reset, stop the server, keep a backup, and remove `board.sqlite` together with both `board.sqlite-wal` and `board.sqlite-shm` sidecars. Ensure no active legacy `board.json` remains in `.data/`, or the next startup reimports it; `board.json.bak` is never imported.
 
-```sh
-npm run test:browser
-npm run test:time-filter
-npm run test:board:browser
-node scripts/verify-status-sync.mjs
-node scripts/verify-chat-input.mjs
-```
-
-Tests cover SQLite migration, concurrent layout edits, revision conflicts, rollback and worker lifecycle, task discovery, IPC updates and revision recovery, transcript filtering and pagination, native reply/steer/stop routing, duplicate submission handling, and HTTP/SSE boundaries.
-The source uses Node’s built-in HTTP, SQLite, and test modules with a plain JavaScript browser UI.
-`marked` parses Markdown, `dompurify` sanitizes the rendered output, and `mermaid` renders diagrams; all are served locally.
+To restore, use only a verified SQLite backup with the server stopped: copy it over `board.sqlite`, remove any stale `board.sqlite-wal` and `board.sqlite-shm` sidecars, then restart the server and reload open tabs. Preserve `.data/task-requests` when resetting or restoring, because those records provide duplicate-creation protection.

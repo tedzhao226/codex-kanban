@@ -19,7 +19,7 @@ Desktop's open Unix sockets did not include that endpoint.
 
 Installed source explains the behavior: `registerIpcClientForWebContents` returns immediately when `getTransportKind() !== 'stdio'`.
 The host manager coordination constructor also requires stdio.
-These guards appear in `.vite/build/main-DaMR-wdT.js` at byte offsets 3368665 and 1515628 inside the [app archive](/Applications/ChatGPT.app/Contents/Resources/app.asar).
+These guards appeared in the installed Desktop app's generated main bundle at the recorded byte offsets inside its app archive.
 This is a transport restriction in this Desktop build, rather than a stale Kanban connection.
 The native task-management tools were also absent from this task's available tool catalog after the restart.
 
@@ -97,13 +97,14 @@ No persistent app setting or app binary needs changing.
 After Desktop has quit, start the shared server in one terminal:
 
 ```sh
-/Applications/ChatGPT.app/Contents/Resources/codex app-server --listen ws://127.0.0.1:4319
+CODEX_APP_SERVER_BIN="path/to/codex"
+"$CODEX_APP_SERVER_BIN" app-server --listen ws://127.0.0.1:4319
 ```
 
 Then launch Desktop from another terminal:
 
 ```sh
-CODEX_APP_SERVER_WS_URL=ws://127.0.0.1:4319 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT
+CODEX_APP_SERVER_WS_URL=ws://127.0.0.1:4319 path/to/CodexDesktop
 ```
 
 Unlike the isolated probe, these commands use the normal Codex home and account configuration.

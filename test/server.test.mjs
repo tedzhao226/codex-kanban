@@ -3,14 +3,28 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { once, EventEmitter } from 'node:events';
 import http from 'node:http';
 import { connect } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createApp } from '../server.mjs';
 import { BoardStore } from '../lib/board.mjs';
 
 const id = '11111111-1111-1111-1111-111111111111';
+const entry = new URL('../server.mjs', import.meta.url);
+
+test('starting without a Codex task database exits with a clear message instead of a stack trace', async t => {
+  const home = mkdtempSync(join(tmpdir(), 'kanban-empty-home-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const result = await promisify(execFile)(process.execPath, [fileURLToPath(entry)], { env: { ...process.env, CODEX_HOME: home, PORT: '4317' } }).catch(error => error);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /no Codex task database at .*state_5\.sqlite/);
+  assert.match(result.stderr, /CODEX_HOME/);
+  assert.doesNotMatch(result.stderr, /at .* \(.*:\d+:\d+\)/);
+});
 async function fixture(t, ids = [id], options = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'kanban-server-'));
   const opened = [];

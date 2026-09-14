@@ -2,3 +2,14 @@
 node_modules/
 .DS_Store
 *.log
+.multica/
+.cursor/
+.devin/
+.kiro/
+AGENTS.md
+.env
+.env.*
+!.env.example
+*.tgz
+coverage/
+dist/

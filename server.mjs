@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join, dirname } from 'node:path';
@@ -198,6 +199,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex');
   const port = Number(process.env.PORT || 4317);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be between 1 and 65535.');
+  const database = join(codexHome, 'state_5.sqlite');
+  if (!existsSync(database)) {
+    console.error(`Codex Kanban: no Codex task database at ${database}. Install and sign in to Codex Desktop, or set CODEX_HOME to its data directory.`);
+    process.exit(1);
+  }
   const index = new TaskIndex(codexHome);
   const feed = new DesktopFeed(join(codexHome, 'ipc', 'ipc.sock'));
   const store = await BoardStore.open(join(root, '.data', 'board.sqlite'));
