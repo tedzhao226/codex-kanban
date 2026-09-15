@@ -87,4 +87,4 @@ The integration relies on private Codex interfaces and may need updates when Des
 See [architecture and session state](ARCHITECTURE.md#current-local-system) for module boundaries and [security](SECURITY.md) for reporting vulnerabilities.
 Hosted designs in the architecture docs are proposals; this release is local-only.
 
-The source is publicly available, but no open-source license has been granted yet.
+Licensed under the [MIT License](LICENSE).
