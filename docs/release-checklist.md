@@ -1,6 +1,6 @@
 ## Local source release checklist
 
-- [ ] Choose a license before calling the repository open-source licensed. This source publication does not grant a license.
+- [x] License the project under the [MIT License](../LICENSE).
 - [x] Owner selected public publication at `tedzhao226/codex-kanban` on 2026-09-14.
 - [x] Use GitHub private vulnerability reporting, linked from `SECURITY.md`.
 - [ ] Complete a clean Mac/native compatibility smoke test against the intended Codex Desktop build.
